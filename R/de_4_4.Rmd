@@ -190,7 +190,7 @@ ggplot(valid_obs, aes(conditionb, log(fold_change), colour = is_de)) +
   scale_colour_manual(values = c("red", "black")) +
   geom_abline(slope = 1, intercept = 0) +
   geom_smooth(method = "lm", colour = "blue") +
-  xlim(-10, 10) +
+  xlim(-5, 5) +
   ylim(-2, 2)
 ```
 
@@ -202,7 +202,7 @@ ggplot(valid_obs, aes(bs_mean_conditionb, log(fold_change), colour = is_de)) +
   scale_colour_manual(values = c("red", "black")) +
   geom_abline(slope = 1, intercept = 0) +
   geom_smooth(method = "lm", colour = "blue") +
-  xlim(-10, 10) +
+  xlim(-5, 5) +
   ylim(-2, 2)
 ```
 
@@ -215,7 +215,24 @@ valid_obs %>%
     mpe_est = median(abs(
         sleuth:::scaled_error(conditionb, log(fold_change))), na.rm = TRUE),
     mpe_bs = median(abs(
-        sleuth:::scaled_error(bs_mean_conditionb, log(fold_change))), na.rm = TRUE)
+        sleuth:::scaled_error(bs_mean_conditionb, log(fold_change))), na.rm = TRUE),
+    cor_est = cor(conditionb, log(fold_change)),
+    cor_bs = cor(bs_mean_conditionb, log(fold_change))
+)
+```
+
+Filter based on things that are DE:
+
+```{r}
+valid_obs %>%
+  filter(is_de) %>%
+  summarise(
+    mpe_est = median(abs(
+        sleuth:::scaled_error(conditionb, log(fold_change))), na.rm = TRUE),
+    mpe_bs = median(abs(
+        sleuth:::scaled_error(bs_mean_conditionb, log(fold_change))), na.rm = TRUE),
+    cor_est = cor(conditionb, log(fold_change)),
+    cor_bs = cor(bs_mean_conditionb, log(fold_change))
 )
 ```
 
@@ -350,6 +367,16 @@ valid_obs %>%
     ylim(0, 0.25)
 ```
 
+
+```{r,cache=TRUE}
+valid_obs %>%
+  ggplot(aes(se_ratio, med_scaled_err)) +
+    geom_point(alpha = 0.05) +
+    xlim(0, 1.25) +
+    ylim(0, 0.25) +
+    facet_wrap(~ is_de)
+```
+
 How well are these things correlated?
 
 ```{r}
@@ -377,4 +404,36 @@ de_truth %>%
     geom_point(alpha = 0.05) +
     xlim(0, 1) +
     ylim(0, 1)
+```
+
+looking at the variance
+
+```{r,cache=TRUE}
+de_truth %>%
+  select(target_id, nb_dispersion = dispersion) %>%
+  inner_join(valid_obs, by = c("target_id")) %>%
+  ggplot(aes(counts + nb_dispersion * counts ^ 2, dispersion * counts ^2)) +
+    geom_point(alpha = 0.05) +
+    scale_x_log10() +
+    scale_y_log10()
+```
+
+# How to estimate dispersion?
+
+First, let's look at how many transcripts have BS var >= GLM var
+
+```{r,cache=TRUE}
+valid_obs %>%
+  group_by(is_de) %>%
+  summarise(
+    bs_var_gte_glm = mean(bs_se_conditionb >= se_conditionb, na.rm = TRUE),
+    n_gte = sum(bs_se_conditionb >= se_conditionb, na.rm = TRUE),
+    n_total = sum(!is.na(bs_se_conditionb >= se_conditionb)))
+```
+
+
+```{r,cache=TRUE}
+# fit the intercept only model
+system.time(null_obs_glms <- glm_by_rows(obs_norm,
+    model.matrix( ~ 1, s_o$sample_to_condition)
 ```
