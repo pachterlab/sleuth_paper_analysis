@@ -56,12 +56,20 @@ debugonce(lmm_by_row)
 system.time(all_lmm <- lmm_by_row(s_o, log(expression + 0.5) ~ condition,
     list(sample = ~ 1), pass_filt))
 
+
+system.time(all_lmm_ml <- lmm_by_row(s_o, log(expression + 0.5) ~ condition,
+    list(sample = ~ 1), pass_filt, "ML"))
+
 ################################################################################
 
 load("../data/lmm.RData", verbose = TRUE)
 
 names(all_lmm) <- s_o$kal[[1]]$bootstrap[[1]]$target_id
 filt_lmm <- all_lmm %>%
+  Filter(function(x) is(x, "lme"), .)
+
+names(all_lmm_ml) <- s_o$kal[[1]]$bootstrap[[1]]$target_id
+filt_lmm_ml <- all_lmm_ml %>%
   Filter(function(x) is(x, "lme"), .)
 
 summary_lmm <- lapply(filt_lmm, summary)
@@ -75,12 +83,24 @@ pvals <- summary_lmm %>%
       s <- summary_lmm[[i]]
       data.frame(target_id = id, b = s$tTable["conditionb", "Value"],
         pval = s$tTable["conditionb", "p-value"],
+        var_b = s$varFix[1,1],
         sigma = summary_lmm[[i]]$sigma)
     }) %>%
       rbind_all()
 
-pvals <- pvals %>%
-  mutate(qval = p.adjust(pval, method = "BH"))
+
+summary_lmm_ml <- filt_lmm_ml %>%
+  seq_along() %>%
+  lapply(
+    function(i)
+    {
+      id <- names(filt_lmm_ml)[i]
+      s <- filt_lmm_ml[[i]]
+      data.frame(target_id = id, b = s$coefficients$fixed[2],
+        sigma = s$sigma,
+        var_b = s$varFix[1,1])
+    })
+summary_lmm_ml_df <- rbind_all(summary_lmm_ml)
 
 pvals_truth <- de_truth %>%
   select(target_id, fold_change, valid_trans, est_counts, is_de) %>%
@@ -241,5 +261,67 @@ debugonce(nlme:::summary.lme)
 debugonce(nlme:::MEestimate)
 summary(filt_lmm[[1]])
 
+################################################################################
+# here, we want to get a working copy of lmm so we can figure out what it's
+# doing
+################################################################################
+
+dcast_res <- dcast_bootstrap(s_o, "est_counts")
+tmp_trans <- "ENST00000361739"
+tmp_design <- model.matrix(~ condition, lmm_design(s_o))
+
+debugonce(lmm)
+ah <- sleuth::lmm(tmp_design, log(dcast_res[tmp_trans,] + 0.5), 8)
+sqrt( ah$sigma_sq )
+filt_lmm[[tmp_trans]]$sigma
+
+# let's see how the closed form lmm correlates with nlme::lme
+system.time(hp_filt_lmm <- lapply(names(filt_lmm),
+  function(target_id)
+  {
+    lmm(tmp_design, log(dcast_res[target_id,] + 0.5), 8)
+  }))
+
+hp_filt_lmm_df <- data.frame(target_id = names(filt_lmm),
+  hp_sigma = sapply(hp_filt_lmm, function(x) sqrt(x$sigma)),
+  hp_var_b1 = sapply(hp_filt_lmm, function(x) x$cov_b[1,1]),
+  stringsAsFactors = FALSE)
+
+lme_lmm_sigma <- inner_join(hp_filt_lmm_df, select(pvals, target_id, var_b, sigma),
+  by = "target_id")
+
+lme_ml_lmm_sigma <- inner_join(hp_filt_lmm_df, summary_lmm_ml_df,
+  by = "target_id")
+
+ggplot(lme_lmm_sigma, aes(hp_sigma, sigma)) +
+  geom_point(alpha = 0.2) +
+  geom_abline(intercept = 0, slope = 1, colour = "red") +
+  geom_smooth(method = "lm", colour = "blue")
+with(lme_lmm_sigma, cor(hp_sigma, sigma, use = "complete.obs"))
+
+ggsave("../img/lme_lmm_sigma.png")
+
+p_reml_b <- ggplot(lme_lmm_sigma, aes(hp_var_b1, var_b)) +
+  geom_point(alpha = 0.2) +
+  geom_abline(intercept = 0, slope = 1, colour = "red") +
+  geom_smooth(method = "lm", colour = "blue") +
+  xlim(0, 1.5) +
+  ylim(0, 1.5) +
+  ylab("var_b using REML")
+
+p_ml_b <- ggplot(lme_ml_lmm_sigma, aes(hp_var_b1, var_b)) +
+  geom_point(alpha = 0.2) +
+  geom_abline(intercept = 0, slope = 1, colour = "red") +
+  geom_smooth(method = "lm", colour = "blue") +
+  xlim(0, 1.5) +
+  ylim(0, 1.5) +
+  ylab("var_b using ML")
+
+plt <- plot_grid(p_reml_b, p_ml_b)
+png("../img/lme_ml_lmm_vbeta.png")
+plt
+dev.off()
+
+save_plot("../img/lme_ml_lmm_vbeta.png", plt)
 
 
