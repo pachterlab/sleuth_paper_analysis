@@ -84,10 +84,10 @@ pvals <- summary_lmm %>%
       data.frame(target_id = id, b = s$tTable["conditionb", "Value"],
         pval = s$tTable["conditionb", "p-value"],
         var_b = s$varFix[1,1],
-        sigma = summary_lmm[[i]]$sigma)
+        sigma = summary_lmm[[i]]$sigma,
+        t = s$tTable["conditionb", "t-value"])
     }) %>%
       rbind_all()
-
 
 summary_lmm_ml <- filt_lmm_ml %>%
   seq_along() %>%
@@ -95,10 +95,13 @@ summary_lmm_ml <- filt_lmm_ml %>%
     function(i)
     {
       id <- names(filt_lmm_ml)[i]
-      s <- filt_lmm_ml[[i]]
+      s <- summary(filt_lmm_ml[[i]])
+      #s_summary <- summary(s)
       data.frame(target_id = id, b = s$coefficients$fixed[2],
+        pval = s$tTable["conditionb", "p-value"],
         sigma = s$sigma,
-        var_b = s$varFix[1,1])
+        var_b = s$varFix[1,1],
+        t = s$tTable["conditionb", "t-value"])
     })
 summary_lmm_ml_df <- rbind_all(summary_lmm_ml)
 
@@ -274,6 +277,7 @@ debugonce(lmm)
 ah <- sleuth::lmm(tmp_design, log(dcast_res[tmp_trans,] + 0.5), 8)
 sqrt( ah$sigma_sq )
 filt_lmm[[tmp_trans]]$sigma
+filt_lmm[[tmp_trans]]
 
 # let's see how the closed form lmm correlates with nlme::lme
 system.time(hp_filt_lmm <- lapply(names(filt_lmm),
@@ -284,10 +288,12 @@ system.time(hp_filt_lmm <- lapply(names(filt_lmm),
 
 hp_filt_lmm_df <- data.frame(target_id = names(filt_lmm),
   hp_sigma = sapply(hp_filt_lmm, function(x) sqrt(x$sigma)),
+  hp_b = sapply(hp_filt_lmm, function(x) x$coef[2]),
   hp_var_b1 = sapply(hp_filt_lmm, function(x) x$cov_b[1,1]),
+  hp_t = sapply(hp_filt_lmm, function(x) x$t_value[2]),
   stringsAsFactors = FALSE)
 
-lme_lmm_sigma <- inner_join(hp_filt_lmm_df, select(pvals, target_id, var_b, sigma),
+lme_lmm_sigma <- inner_join(hp_filt_lmm_df, select(pvals, target_id, var_b, sigma, t),
   by = "target_id")
 
 lme_ml_lmm_sigma <- inner_join(hp_filt_lmm_df, summary_lmm_ml_df,
@@ -318,10 +324,164 @@ p_ml_b <- ggplot(lme_ml_lmm_sigma, aes(hp_var_b1, var_b)) +
   ylab("var_b using ML")
 
 plt <- plot_grid(p_reml_b, p_ml_b)
-png("../img/lme_ml_lmm_vbeta.png")
 plt
+dev.print(pdf, "../img/lme_ml_lmm_vbeta.pdf")
+dev.off()
+
+p_reml_t <- ggplot(lme_lmm_sigma, aes(abs(hp_t), abs(t))) +
+  geom_point(alpha = 0.2) +
+  geom_abline(intercept = 0, slope = 1, colour = "red") +
+  geom_smooth(method = "lm", colour = "blue") +
+  # xlim(0, 1.5) +
+  # ylim(0, 1.5) +
+  ylab("t using REML")
+
+p_ml_t <- ggplot(lme_ml_lmm_sigma, aes(abs(hp_t), abs(t))) +
+  geom_point(alpha = 0.2) +
+  geom_abline(intercept = 0, slope = 1, colour = "red") +
+  geom_smooth(method = "lm", colour = "blue") +
+  # xlim(0, 1.5) +
+  # ylim(0, 1.5) +
+  ylab("t using ML")
+
+plt <- plot_grid(p_reml_t, p_ml_t)
+plt
+dev.print(pdf, "../img/lme_lmm_t.pdf")
 dev.off()
 
 save_plot("../img/lme_ml_lmm_vbeta.png", plt)
 
+################################################################################
+# fit my own lmm
+################################################################################
+
+debugonce(compute_lmms)
+system.time(s_o <- compute_lmms(s_o, function(x) log(x + 0.5), pass_filt))
+s_o$sigma$bs_mean <- s_o$bs_means
+
+debugonce(naive_shrink_lmm)
+s_o <- naive_shrink_lmm(s_o)
+
+plot_mean_var(s_o) +
+  geom_line(aes(bs_mean, naive_locfit), colour = "red")
+
+s_o$sigma %>%
+  head()
+s_o$adjustment <- s_o$adjustment[1,1]
+
+all_ts <- compute_t(s_o, "naive_shrink_sigma")
+
+all_ts_raw <- compute_t(s_o, "raw_sigma")
+
+naive_shrink_pvals <- all_ts$p_vals %>%
+  data.frame() %>%
+  select(pval = conditionb) %>%
+  mutate(target_id = rownames(all_ts$p_vals)) %>%
+  mutate(qval = p.adjust(pval, method = "BH"))
+
+raw_pvals <- all_ts_raw$p_vals %>%
+  data.frame() %>%
+  select(pval = conditionb) %>%
+  mutate(target_id = rownames(all_ts_raw$p_vals)) %>%
+  mutate(qval = p.adjust(pval, method = "BH"))
+
+colnames(all_ts$p_vals)[2] <- "shrink_pval"
+
+################################################################################
+# looking at the p-values output from my method vs the R lme method
+shrink_pvals <- all_ts$p_vals %>%
+  as.data.frame() %>%
+  mutate(target_id = rownames(all_ts$p_vals)) %>%
+  select(-`(Intercept)`)
+
+tmp <- inner_join(shrink_pvals, summary_lmm_ml_df, by = "target_id")
+
+
+ggplot(tmp, aes(pval, shrink_pval)) +
+  geom_point(alpha = 0.04) +
+  geom_abline(intercept = 0, slope = 1, colour = "red") +
+  geom_smooth(method = "lm")
+
+# put t-values and p-values in the same table for 'conditionb'
+raw_pvals <- all_ts_raw$p_vals %>%
+  as.data.frame() %>%
+  mutate(target_id = rownames(all_ts_raw$p_vals)) %>%
+  select(-`(Intercept)`)
+raw_pvals <- rename(raw_pvals, raw_pval = conditionb)
+raw_pvals <- all_ts_raw$t_stats %>%
+  as.data.frame() %>%
+  mutate(target_id = rownames(all_ts_raw$t_stats)) %>%
+  select(-`(Intercept)`, raw_t_stat = conditionb) %>%
+  inner_join(raw_pvals, by = "target_id")
+
+tmp2 <- inner_join(raw_pvals, summary_lmm_ml_df, by = "target_id")
+
+ggplot(tmp2, aes(pval, raw_pval)) +
+  geom_point(alpha = 0.04) +
+  geom_abline(intercept = 0, slope = 1, colour = "red") +
+  geom_smooth(method = "lm")
+
+ggplot(tmp2, aes(abs(t), abs(raw_t_stat))) +
+  geom_point(alpha = 0.04) +
+  geom_abline(intercept = 0, slope = 1, colour = "red") +
+  geom_smooth(method = "lm") +
+  xlim(0, 100) +
+  ylim(0, 100)
+
+##########
+# there seems to be an issue with the p-values and the t-statistics. a lot of
+# stuff that has a smaller p-value using my method vs the lme method. let's
+# investigate that...
+##########
+
+# first, let's compare raw sigmas again...
+raw_sigma_df <- s_o$sigma[c(1)] %>%
+  mutate(target_id = rownames(s_o$sigma)) %>%
+  inner_join(summary_lmm_ml_df, by = "target_id")
+
+# correlation is very high... looks good.
+with(raw_sigma_df, cor(raw_sigma, sigma))
+
+# looks almost perfect. issue is NOT in sigma. must be in the way var(\beta) is computed
+ggplot(raw_sigma_df, aes(sigma, raw_sigma)) +
+  geom_point(alpha = 0.2) +
+  geom_abline(intercept = 0, slope = 1) +
+  geom_smooth(method = "lm")
+
+fixed_sd <- s_o$fixed_sd %>%
+  data.frame() %>%
+  select(hp_sd_b = conditionb) %>%
+  mutate(target_id = rownames(s_o$fixed_sd))
+
+fixed_sd <- summary_lmm_ml_df %>%
+  mutate(sd_b = sqrt(var_b * s_o$adjustment)) %>%
+  inner_join(fixed_sd, by = "target_id")
+
+# this plot shows that my calculation of the SD is much greater than the
+# R version (lme).  this issue doesn't explain why there is a strange variation
+# in the calculation of p-values (e.g. p-values that are less in our version)
+ggplot(fixed_sd, aes(sd_b, hp_sd_b)) +
+  geom_point(alpha = 0.2) +
+  geom_abline(intercept = 0, slope = 1, colour = "red") +
+  geom_smooth(method = "lm", colour = "blue") +
+  xlim(0, 2) +
+  ylim(0, 2)
+
+all_ts_raw <- compute_t(s_o, "raw_sigma")
+
+# let's compare the p-values using compute_t versus doing them from my closed
+# form output
+t_values <- sapply(s_o$lmms, function(x) x$t_value[2]) %>%
+  data_frame(t_value = ., target_id = names(s_o$lmms))
+
+compute_t_values <- data_frame(compute_t_value = all_ts_raw$t_stats[,2],
+  target_id = rownames(all_ts_raw$t_stats))
+
+# after finding bug, they now seem consistent -- woohoo!
+ggplot(inner_join(t_values, compute_t_values, by = "target_id"),
+  aes(t_value, compute_t_value)) +
+    geom_point(alpha = 0.2) +
+    geom_abline(intercept = 0, slope = 1)
+
+################################################################################
 
