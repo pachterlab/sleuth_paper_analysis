@@ -358,6 +358,7 @@ save_plot("../img/lme_ml_lmm_vbeta.png", plt)
 debugonce(compute_lmms)
 system.time(s_o <- compute_lmms(s_o, function(x) log(x + 0.5), pass_filt))
 s_o$sigma$bs_mean <- s_o$bs_means
+tmp_sigma <- s_o$sigma
 
 debugonce(naive_shrink_lmm)
 s_o <- naive_shrink_lmm(s_o)
@@ -484,4 +485,139 @@ ggplot(inner_join(t_values, compute_t_values, by = "target_id"),
     geom_abline(intercept = 0, slope = 1)
 
 ################################################################################
+# take a look at the bootstrap vs raw variance
+################################################################################
 
+tmp_summary <- sleuth:::sleuth_summarize_bootstrap_col(s_o, "est_counts", function(x) log(x + 0.5))
+tmp_summary <- tmp_summary %>%
+  group_by(target_id) %>%
+  summarise(mean_sd = mean(bs_sd_est_counts), mean_var = mean(bs_var_est_counts))
+
+tmp <- s_o$sigma %>%
+  mutate(target_id = rownames(s_o$sigma))
+
+bs_sigma <- inner_join(tmp_summary, tmp, by = "target_id")
+bs_sigma <- bs_sigma %>%
+  mutate(prop_sd = mean_sd / raw_sigma)
+
+# join in the observed stuff
+s_o$obs_raw <- s_o$obs_raw %>%
+  mutate(log_est_counts = log(est_counts + 0.5))
+
+obs_summary <- s_o$obs_raw %>%
+  group_by(target_id) %>%
+  summarise(
+    obs_mean = mean(log_est_counts),
+    obs_sd = sd(log_est_counts),
+    obs_var = var(log_est_counts)
+    )
+
+bs_sigma <- inner_join(bs_sigma, obs_summary, by = "target_id")
+bs_sigma <- bs_sigma %>%
+  mutate(prop_sd_obs = mean_sd / obs_sd)
+
+hist(bs_sigma$prop_sd)
+
+# the 'obs' version makes a lot more sense
+hist(bs_sigma$prop_sd_obs, xlim = c(0, 1.5), breaks = 100L)
+
+# let's now compare the calculated p-value to the prop_sd_obs
+pvals_sigma <- inner_join(raw_pvals, bs_sigma, by = "target_id")
+pvals_sigma <- select(de_truth, target_id, is_de) %>%
+  inner_join(pvals_sigma, by = "target_id")
+
+ggplot(filter(pvals_sigma, !is_de), aes(prop_sd_obs, qval, colour = is_de)) +
+  geom_point(alpha = 0.3) +
+  xlim(0, 1.5) +
+  geom_abline(intercept = 0.1, slope = 0)
+
+s_group <- bs_sigma %>%
+  mutate(est_quantile = ecdf(prop_sd_obs)(prop_sd_obs)) %>%
+  #mutate(shrinkage_group = cut(est_quantile, 7))
+  mutate(shrinkage_group = cut(est_quantile, c(-1e10, 0.0625, 0.125, 0.25, 0.5, 1)))
+
+s_o$sigma$target_id <- rownames(s_o$sigma)
+
+debugonce(shrink_by_group_lmm)
+s_o$sigma <- select(s_o$sigma, -c(shrinkage_group, group_shrink_smooth, group_shrink_sigma))
+s_o <- shrink_by_group_lmm(s_o, s_group)
+
+ggplot(s_o$sigma, aes(bs_mean, raw_sigma)) +
+  geom_point(aes(colour = shrinkage_group), alpha = 0.2) +
+  #facet_wrap(~ shrinkage_group)
+  geom_line(aes(group = shrinkage_group, colour = shrinkage_group,
+    y = group_shrink_smooth), alpha = 1, size = 1.2) +
+      facet_wrap(~shrinkage_group)
+
+debugonce(compute_t)
+group_shrink_t <- compute_t(s_o, "group_shrink_sigma", use_obs_beta = TRUE)
+gah_t <- compute_t(s_o, "naive_shrink_sigma")
+gah_pval <- gah_t$p_vals %>%
+  as.data.frame() %>%
+  select(pval = conditionb) %>%
+  mutate(target_id = rownames(gah_t$p_vals))
+gah_pval <- gah_pval %>%
+  mutate(qval = p.adjust(pval, method = "BH"))
+
+all.equal(gah_pval$qval, naive_shrink_pvals$qval)
+
+group_shrink_pval <- group_shrink_t$p_vals %>%
+  as.data.frame() %>%
+  select(pval = conditionb) %>%
+  mutate(target_id = rownames(group_shrink_t$p_vals))
+group_shrink_pval <- group_shrink_pval %>%
+  mutate(qval = p.adjust(pval, method = "BH"))
+
+tmp <- inner_join(group_shrink_pval,
+  select(bs_sigma, target_id, prop_sd_obs, prop_sd),
+  by = "target_id") %>%
+    inner_join(select(de_truth, target_id, is_de), by = "target_id")
+tmp <- mutate(tmp, significant = qval <= 0.10)
+
+ggplot(tmp, aes(prop_sd_obs, rank(pval), group = is_de)) +
+  geom_point(aes(colour = significant), alpha = 0.2) +
+  #geom_abline(intercept = 0.1, slope = 0) +
+  xlim(0, 4) +
+  facet_wrap(~is_de)
+
+################################################################################
+# try a new shrinkage amount. basically, use the quantile to say how much
+# you're going to shrink
+################################################################################
+
+tmp_sigma <- inner_join(s_o$sigma,
+  select(s_group, target_id, est_quantile, prop_sd_obs), by = "target_id")
+
+tmp_sigma <- tmp_sigma %>%
+  mutate(convex_sigma = ifelse(raw_sigma < group_shrink_smooth,
+    est_quantile * raw_sigma + (1-est_quantile) * group_shrink_smooth,
+    raw_sigma)) #%>%
+  #mutate(convex_sigma = pmax(convex_sigma, raw_sigma))
+
+s_o$sigma <- select(tmp_sigma, -prop_sd_obs, -est_quantile)
+s_o$sigma <- as.data.frame(s_o$sigma)
+rownames(s_o$sigma) <- s_o$sigma$target_id
+
+convex_t <- compute_t(s_o, "convex_sigma", use_obs_beta = TRUE)
+convex_pval <- convex_t$p_vals %>%
+  as.data.frame() %>%
+  select(pval = conditionb) %>%
+  mutate(target_id = rownames(convex_t$p_vals)) %>%
+  mutate(qval = p.adjust(pval, method = "BH"))
+
+# well, this turned out to be poopy.
+
+################################################################################
+# use observed betas instead of bootstrap betas
+################################################################################
+
+debugonce(ols_by_row)
+s_o$obs_beta <- ols_by_row(s_o, s_o$design_matrix, function(x) log(x + 0.5))
+
+group_shrink_obs_t <- compute_t(s_o, "group_shrink_sigma", use_obs_beta = TRUE)
+
+group_shrink_obs_pval <- group_shrink_obs_t$p_vals %>%
+  as.data.frame() %>%
+  select(pval = conditionb) %>%
+  mutate(target_id = rownames(group_shrink_obs_t$p_vals)) %>%
+  mutate(qval = p.adjust(pval, method = "BH"))
