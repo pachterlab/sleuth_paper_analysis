@@ -621,3 +621,62 @@ group_shrink_obs_pval <- group_shrink_obs_t$p_vals %>%
   select(pval = conditionb) %>%
   mutate(target_id = rownames(group_shrink_obs_t$p_vals)) %>%
   mutate(qval = p.adjust(pval, method = "BH"))
+
+################################################################################
+# fit the measurement error model
+################################################################################
+
+tmp_summary <- sleuth:::sleuth_summarize_bootstrap_col(s_o, "est_counts", function(x) log(x + 0.5))
+
+debugonce(me_model_by_row)
+debugonce(sleuth:::me_model)
+
+
+debugonce(bs_sigma_summary)
+bs_summary <- bs_sigma_summary(s_o, function(x) log(x + 0.5))
+
+debugonce(sleuth:::me_model)
+mes <- me_model_by_row(s_o, s_o$design_matrix, bs_summary)
+mes_df <- rbindlist(mes) %>% as.data.frame
+mes_df$target_id <- names(mes)
+mes_df <- semi_join(mes_df, filter(pass_filt, count_filt), by = "target_id")
+
+mes_df <- mes_df %>%
+  mutate(sd_rate = sqrt(var_obs)/sqrt(sigma_q_sq)) %>%
+  mutate(sd_rate_ecdf = ecdf(sd_rate)(sd_rate)) %>%
+  mutate(sd_rate_group = cut(sd_rate_ecdf, 4)) %>%
+  mutate(sigma_sq_pmax = pmax(sigma_sq, 0))
+
+ggplot(mes_df, aes(mean_obs, sqrt(sigma_pmax))) +
+  geom_point(aes(colour = sd_rate_group), alpha = 0.4) +
+  ylim(0, 2)
+
+#hi <- sliding_window_grouping(mes_df, "mean_obs", "sigma_sq_pmax", ignore_zeroes = FALSE)
+hi <- sliding_window_grouping(mes_df, "mean_obs", "sigma_sq_pmax", ignore_zeroes = TRUE)
+ggplot(hi, aes(mean_obs, sqrt(sqrt(sigma_sq_pmax)))) +
+  geom_point(aes(colour = iqr), alpha = 0.2) +
+  ylim(0, 2)
+
+loess_smooth <- shrink_df(hi, sqrt(sqrt(sigma_sq_pmax)) ~ mean_obs, "iqr")
+loess_smooth <- loess_smooth^4
+hi <- hi %>%
+  mutate(smooth_sigma_sq = loess_smooth)
+hi <- hi %>%
+  mutate(smooth_max_sigma_sq = pmax(smooth_sigma_sq, sigma_sq))
+
+ggplot(hi, aes(mean_obs, sqrt(sqrt(sigma_sq_pmax)))) +
+  geom_point(aes(colour = iqr), alpha = 0.2) +
+  geom_line(aes(mean_obs, smooth ^ (1/4))) +
+  ylim(0, 2)
+
+x_val <- s_o$design_mat[,"conditionb"]
+Sxx <- sum( ( x_val - mean(x_val) ) ^ 2)
+ah <- compute_t_me(hi, "smooth_sigma_sq", Sxx, 8)
+ah <- ah %>%
+  select(target_id, pval) %>%
+  mutate(qval = p.adjust(pval, method = "BH"))
+
+ah2 <- compute_t_me(hi, "smooth_max_sigma_sq", Sxx, 8) %>%
+  select(target_id, pval) %>%
+  mutate(qval = p.adjust(pval, method = "BH"))
+

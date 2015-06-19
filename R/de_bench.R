@@ -43,21 +43,25 @@ de_bench <- new_de_benchmark(
     deseq_res,
     # pvals,
     #naive_shrink_pvals,
-    summary_lmm_ml_df,
+    #summary_lmm_ml_df,
     # raw_pvals,
-    group_shrink_pval,
-    group_shrink_obs_pval,
-    convex_pval
+    #group_shrink_pval,
+    #group_shrink_obs_pval,
+    ah,
+    ah2
+    #convex_pval
     ),
   c(
     "deseq2",
     # "lmm_reml",
     #"naive_shrink",
-    "lmm_ml",
+    #"lmm_ml",
     # "hp_raw",
-    "group_shrink",
-    "group_shrink_obs",
-    "convex_pval"
+    #"group_shrink",
+    #"group_shrink_obs",
+    "me",
+    "me_max"
+    #"convex_pval"
     ), de_truth)
 
 fdr_tpr_plot(de_bench) +
@@ -67,7 +71,8 @@ fdr_tpr_plot(de_bench) +
 fdr_nde_plot(de_bench) +
   theme_bw(25) +
   #xlim(0, 12000) +
-  xlim(0, 7500) +
+  xlim(5000, 7500) +
+  #xlim(0, 7500) +
   ylim(0, 0.250)
 
 ggsave("../img/fdr_naive_shrink_upd.png")
