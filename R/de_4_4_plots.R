@@ -5,6 +5,7 @@ library("cowplot")
 library("ggplot2")
 library("ggvis")
 library("nlme")
+library("sleuth")
 
 base_dir <- "../data/de_4_4"
 
@@ -32,6 +33,8 @@ id_to_condition <- data.frame(sample = paste0("sample_", 1:8),
 ################################################################################
 s_o <- new_sleuth(kal_obj, id_to_condition, ~ condition, norm_bootstraps = FALSE)
 s_o$obs_norm <- s_o$obs_raw
+
+rm(kal_obj)
 
 s_o <- prep_bs_plots(s_o)
 
@@ -647,10 +650,6 @@ mes_df <- mes_df %>%
   mutate(sd_rate_group = cut(sd_rate_ecdf, 4)) %>%
   mutate(sigma_sq_pmax = pmax(sigma_sq, 0))
 
-ggplot(mes_df, aes(mean_obs, sqrt(sigma_pmax))) +
-  geom_point(aes(colour = sd_rate_group), alpha = 0.4) +
-  ylim(0, 2)
-
 #hi <- sliding_window_grouping(mes_df, "mean_obs", "sigma_sq_pmax", ignore_zeroes = FALSE)
 hi <- sliding_window_grouping(mes_df, "mean_obs", "sigma_sq_pmax", ignore_zeroes = TRUE)
 ggplot(hi, aes(mean_obs, sqrt(sqrt(sigma_sq_pmax)))) +
@@ -664,19 +663,37 @@ hi <- hi %>%
 hi <- hi %>%
   mutate(smooth_max_sigma_sq = pmax(smooth_sigma_sq, sigma_sq))
 
+# plotting mean log expression vs sigma
 ggplot(hi, aes(mean_obs, sqrt(sqrt(sigma_sq_pmax)))) +
   geom_point(aes(colour = iqr), alpha = 0.2) +
-  geom_line(aes(mean_obs, smooth ^ (1/4))) +
-  ylim(0, 2)
+  geom_line(aes(mean_obs, smooth_sigma_sq ^ (1/4))) +
+  scale_colour_manual(values = c("black", "dodgerblue")) +
+  xlim(1.5, 12) +
+  ylim(0, 1.5) +
+  theme(legend.position = "none") +
+  xlab("mean( log( counts + 0.5 ) )") +
+  ylab("sqrt( sigma )")
+
+ggsave("../img/mv.pdf")
 
 x_val <- s_o$design_mat[,"conditionb"]
 Sxx <- sum( ( x_val - mean(x_val) ) ^ 2)
+#debugonce(compute_t_me)
+hi <- as.data.frame(hi)
 ah <- compute_t_me(hi, "smooth_sigma_sq", Sxx, 8)
 ah <- ah %>%
   select(target_id, pval) %>%
   mutate(qval = p.adjust(pval, method = "BH"))
+hist(ah$pval)
 
-ah2 <- compute_t_me(hi, "smooth_max_sigma_sq", Sxx, 8) %>%
+ah_adj <- compute_t_me(hi, "smooth_sigma_sq", Sxx, 8, 1)
+ah_adj <- ah_adj %>%
+  select(target_id, pval) %>%
+  mutate(qval = p.adjust(pval, method = "BH"))
+
+hist(ah_adj$pval)
+
+ah2 <- compute_t_me(hi, "smooth_max_sigma_sq", Sxx, 8, 0.1) %>%
   select(target_id, pval) %>%
   mutate(qval = p.adjust(pval, method = "BH"))
 
