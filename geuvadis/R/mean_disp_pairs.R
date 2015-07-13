@@ -1,27 +1,31 @@
-library("ggplot2")
-library("cowplot")
-
+# library("ggplot2")
+# library("cowplot")
 source("../../simulation_core/R/simulate_de.R")
 
+# load DF prep_fin which is ready to simulate from
 load("../results/fin_females.RData", verbose = TRUE)
 
 se_fin_females <- GenomicRanges::SummarizedExperiment(round(fin_females))
 dds_fin_females <- DESeq2::DESeqDataSet(se_fin_females, ~ 1)
 dds_fin_females <- DESeq2::estimateSizeFactors(dds_fin_females)
+cat("Cox-Reid estimate\n")
 dds_fin_females <- DESeq2::estimateDispersionsGeneEst(dds_fin_females)
+cat("Smoothed estimate\n")
 dds_fin_females <- DESeq2::estimateDispersionsFit(dds_fin_females)
 
 # the data.frame to simulate from
+cat("preparing the data.frame for DE simulations\n")
 prep_fin <- prep_dds_sim(dds_fin_females)
 
+cat("saving data.frame\n")
 save(prep_fin, file = "../results/prep_fin.RData")
 
-sim_3_3 <- simulate_counts(prep_fin,
-  n_sim = 10L,
-  n_a = 3L,
-  n_b = 3L,
-  prop_de = 0.20,
-  seed = 42)
+# sim_3_3 <- simulate_counts(prep_fin,
+#   n_sim = 10L,
+#   n_a = 3L,
+#   n_b = 3L,
+#   prop_de = 0.20,
+#   seed = 42)
 
 ########################################################################
 # exploratory analysis

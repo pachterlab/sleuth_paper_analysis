@@ -1,10 +1,29 @@
 
+def source_r(base, fname):
+    return 'Rscript --vanilla -e \'setwd("{0}")\' -e \'source("{1}")\''.format(base, fname)
+
 rule all:
     input:
-        'metadata/geu_meta.RData'
+        'metadata/geu_meta.RData',
+        'results/prep_fin.RData'
 
 rule geuvadis_metadata:
     output:
         'metadata/geu_meta.RData'
     shell:
-        'Rscript --vanilla -e \'setwd("R")\' -e \'source("metadata.R")\''
+        source_r('R', 'metadata.R')
+
+rule prep_finnish_samples:
+    input:
+        'metadata/geu_meta.RData'
+    output:
+        'results/prep_fin.RData'
+    shell:
+        source_r('R', 'mean_disp_pairs.R')
+
+rule prep_sim:
+    input:
+        'results/prep_fin.RData'
+    output:
+
+
