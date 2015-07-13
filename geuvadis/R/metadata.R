@@ -34,6 +34,7 @@ egeu1 <- select(egeu1, -factor_population)
 
 select(egeu1, performer, lab) %>%
   distinct()
+
 # let's also drop "lab" and rename performer "lab"
 egeu1 <- egeu1 %>%
   select(-lab) %>%
@@ -65,7 +66,7 @@ geu_meta %>%
 
 # high-level stats
 geu_meta %>%
-  group_by(population, sex, performer) %>%
+  group_by(population, sex, lab) %>%
   summarise(total = n()) %>%
   head(nrow(.))
 

@@ -1,0 +1,10 @@
+
+rule all:
+    input:
+        'metadata/geu_meta.RData'
+
+rule geuvadis_metadata:
+    output:
+        'metadata/geu_meta.RData'
+    shell:
+        'Rscript --vanilla -e \'setwd("R")\' -e \'source("metadata.R")\''

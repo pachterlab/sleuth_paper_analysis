@@ -1,6 +1,3 @@
-library("polyester")
-library("sleuth")
-
 #' Generate fold changes
 #'
 #' Generate fold changes, similar to the method used in "Jun Li and Robert
@@ -41,88 +38,6 @@ gen_foldchanges <- function(valid, p_de = 0.3, p_up = 0.8) {
     n_up = n_up,
     n_down = n_down)
 }
-
-################################################################################
-rsem_raw <- read.table("../rsem/out.isoforms.results", header = TRUE,
-  stringsAsFactors = FALSE)
-
-rsem <- read_rsem("../rsem/out.isoforms.results")
-rsem_alpha <- tpm_to_alpha(rsem$tpm, rsem$eff_len)
-new_total <- 30e6
-
-# normalize things to get a fixed (new_total) number of reads
-rsem_small <- rsem %>%
-  mutate(est_counts = new_total * rsem_alpha,
-    counts = round(est_counts),
-    valid_trans = counts > 5)
-
-# generate fold changes, and get a new data.frame that has the DE info
-set.seed(42)
-fc <- gen_foldchanges(rsem_small$valid, 0.3, 0.8)
-sim_fc <- fc$fold_changes %>%
-  mutate(target_id = rsem_small$target_id)
-sim_fc <- inner_join(rsem_small, sim_fc, by = c("target_id")) %>%
-  select(-valid)
-
-# sim_fc now contains the simulated info we care about
-
-# now, let's order things according to the way they appear in the FASTA file so
-# that the counts/fold changes are in the correct place
-# library("Biostrings")
-
-# fasta_path <- "../../../annotations/Homo_sapiens.GRCh37.75.cdna.pc.fa"
-# anno_fa <- readDNAStringSet(fasta_path)
-# sim_fc <- sim_fc[match(names(anno_fa), sim_fc$target_id),]
-
-# sanity checks
-# all.equal(sim_fc$target_id, names(anno_fa))
-sum(is.na(sim_fc)) == 0
-
-################################################################################
-# simulate using `polyester`
-################################################################################
-
-# put into a format polyester will like
-sim_fc <- sim_fc %>%
-  mutate(fc_a = ifelse(is_de & fold_change < 1, 1 / fold_change, 1),
-    fc_b = ifelse(is_de & fold_change > 1, fold_change, 1))
-fc <- with(sim_fc, matrix(c(fc_a, fc_b), ncol = 2))
-
-debugonce(simulate_experiment)
-
-# simulate DE
-de_30p_80up_time <- system.time(
-  de_30p_80up <- simulate_experiment(
-    fasta = fasta_path,
-    outdir = "polyester/de_30p_80up",
-    num_reps = c(4, 4),
-    reads_per_transcript = sim_fc$counts,
-    fold_changes = fc,
-    # let's use a dispersion param equal in both cond
-    size = sim_fc$counts / 3,
-    paired = TRUE,
-    error_model = "illumina5",
-    seed = 43))
-
-# simulate directly from geuvadis sample
-geu_20_time <- system.time(
-  geu_20 <- simulate_experiment(
-    fasta = fasta_path,
-    outdir = "polyester/NA12716_7_sim",
-    num_reps = c(20),
-    reads_per_transcript = sim_fc$counts,
-    fold_changes = NULL,
-    # let's use a dispersion param equal in both cond
-    paired = TRUE,
-    error_model = "illumina4",
-    seed = 44))
-
-
-
-bm <- c(0, 0, 0, 0.2, 100, 3)
-NB(bm, bm / 3)
-
-################################################################################
 
 sim_nb <- function(base_mean, size) {
   valid_mean <- which( base_mean > .Machine$double.eps )
@@ -227,6 +142,87 @@ generate_counts <- function(base_df, fold_changes, out_dir = "gen_sim",
 
   list(counts = counts, size = size, rsem = rsem_tbl)
 }
+
+#' Counts to rsem-simulate-expression
+#'
+#'
+#' Take a set of counts and make several scripts to simulate counts for each
+#' sample using \code{rsem-simulate-expression} with the --deterministic flag
+#' @param counts a matrix with counts from \code{simulate_counts}
+#' @param info a \code{data.frame} output from \code{simulate_counts}
+#' @param rsem_example an example rsem \code{data.frame} read which is used for
+#' length and effective length
+#' @param out_dir the base directory to output simulation scripts
+generate_counts <- function(counts, info, rsem_example, out_dir = "gen_sim") {
+  stopifnot( is(counts, "matrix") )
+  stopifnot( is(info, "data.frame") )
+
+  rsem_tbl <- lapply(1:ncol(counts),
+    function(cnt)
+    {
+      to_rsem(info$target_id, cnt, info$length, base_df$eff_len)
+    })
+
+  counts <- data.frame(counts)
+  colnames(counts) <- 1:ncol(exp_means)
+  counts$target_id <- base_df$target_id
+
+  dir.create(out_dir)
+  write.table(base_df,
+    file = file.path(out_dir, "de.txt"),
+    sep = "\t",
+    row.names = FALSE, quote = FALSE, col.names = TRUE)
+  write.table(counts,
+    file = file.path(out_dir, "counts.txt"),
+    sep = "\t",
+    row.names = FALSE, quote = FALSE, col.names = TRUE)
+
+  invisible(lapply(seq_along(rsem_tbl),
+    function(i)
+    {
+      dir.create(file.path(out_dir, i))
+      out_fname <- file.path(out_dir, i, paste0(i, ".isoforms.results"))
+      write.table(rsem_tbl[[i]],
+        file = out_fname,
+        sep = "\t", eol = "\n",
+        row.names = FALSE, col.names = TRUE,
+        quote = FALSE)
+      out_str <- paste("#!/bin/bash",
+        "",
+        'if [ "$#" -ne 3 ]; then',
+        ' echo "Requires two arguments RSEM_REFERENCE RSEM_MODEL_FILE"',
+        ' exit 1',
+        'fi',
+        '',
+        "RSEM_REFERENCE=$1",
+        "MODEL_FILE=$2",
+        "OUT_DIR=$3",
+        sep = "\n")
+      theta <- 0.0
+      total_reads <- sum(rsem_tbl[[i]]$expected_count)
+      out_str <- c(out_str, "",
+        paste("rsem-simulate-reads", "${RSEM_REFERENCE}", "${MODEL_FILE}",
+          paste0("${OUT_DIR}/", i, ".isoforms.results"),
+          theta, total_reads, paste0("${OUT_DIR}/sim_", i), "--seed", i, "\n"))
+      out_str <- c(out_str,
+        "",
+        "gzip *.fq", "\n")
+
+      out_str <- paste(out_str, collapse = "\n")
+
+      script_fname <- file.path(out_dir, i, paste0("sim_", i, ".sh"))
+      script_con <- file(script_fname)
+      cat(out_str, file = script_con)
+      close(script_con)
+      Sys.chmod(script_fname, mode = "0755")
+
+      NULL
+    }))
+
+
+  list(counts = counts, size = size, rsem = rsem_tbl)
+}
+
 
 # Generate outline:
 # - Generate fold changes as above

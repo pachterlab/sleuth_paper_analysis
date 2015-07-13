@@ -1,6 +1,49 @@
 # load DF prep_fin which is ready to simulate from
 load("../results/prep_fin.RData", verbose = TRUE)
 
+#' Prepare a DESeqDataSet for simulation
+#'
+#' A basic routine that filters and adjusts dispersion estimates so that we can
+#' simulate from it
+#'
+#' @param dds a DESeqDataSet which has \code{dispGeneEst}
+#' @param min_mean the minumum mean counts to consider for differential
+#' expression
+#' @param min_dispersion the minimum dispersion to use. Default pulled from
+#' DESeq2paper package
+#' @return a data.frame that with can simulate from. Adds column sim_filt to
+#' denote whether or target should be considered for DE.
+#' @export
+prep_dds_sim <- function(dds, min_mean = 5, min_dispersion = 1e-6) {
+  fit <- as.data.frame(GenomicRanges::mcols(dds))
+  fit <- fit %>%
+    mutate(target_id = names(GenomicRanges::rowData(dds)))
+
+  # we want to keep dispersion estimates within a reasonable range.
+  # range was extracted from DESeq2paper package
+  fit <- fit %>%
+    mutate(disp_filt = dispGeneEst > min_dispersion) %>%
+    mutate(disp_filt = ifelse(is.na(disp_filt), FALSE, disp_filt))
+
+  # for dispersion estimates that are hard to estimate (due to low counts),
+  # simply use a fixed estimate based on those which pass the filter
+  med_dispersion <- fit %>%
+    filter(disp_filt) %>%
+    .$dispGeneEst %>%
+    median
+
+  # we now have dispersion estimates for every single transcript
+  fit <- fit %>%
+    mutate(disp_final = ifelse(disp_filt, dispGeneEst, med_disp))
+
+  # we don't want to simulate DE from transcripts that are unlikely expressed
+  # things, so let's omit transcripts that are zero in every condition
+  fit <- fit %>%
+    mutate(sim_filt = !allZero & baseMean > min_mean)
+
+  fit
+}
+
 #' @param sim_df a data.frame which contains columns baseMean, disp_final#' @param X the design matrix
 #' @param size_factors the scaling of each sample
 #' @return a matrix of integer counts
@@ -67,12 +110,18 @@ simulate_counts <- function(prep_df, n_sim = 1, n_a = 3L, n_b = 3L, prop_de = 0.
       s
     })
 
-  list(counts = sim, prep_df = prep_df, condition = condition,
+  list(counts = sim, info = prep_df, condition = condition,
     size_factors = rep(1, nrow(X)))
 }
 
 debugonce(simulate_counts)
 debugonce(make_sim)
+
+# let's get the deepest sample from female Finns to use as our RSEM example for
+# effective lengths and lengths.
+#
+# XXX: we need to quantify this using RSEM now...
+deepest_fin_female <- names( which.max( apply(fin_females, 2, sum) ) )
 
 sim1 <- simulate_counts(prep_fin, n_sim = 10, seed = 42)
 
