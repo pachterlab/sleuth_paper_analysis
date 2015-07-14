@@ -21,9 +21,13 @@ rule prep_finnish_samples:
     shell:
         source_r('R', 'mean_disp_pairs.R')
 
-rule prep_sim:
+rule gen_sim_script:
     input:
         'results/prep_fin.RData'
     output:
+        'sims/{n_a}_{n_b}_{n_sim}/de.txt'
+    shell:
+        source_r('R', 'gen_sim.R') + ' {n_sim} {n_a} {n_b}'
+
 
 

@@ -1,9 +1,12 @@
+#' Output a valid RSEM data.frame
+#'
+#'
 to_rsem <- function(target_id, counts, len, eff_len) {
   data.frame(transcript_id = target_id, gene_id = target_id,
     length = len, effective_length = eff_len,
     expected_count = counts,
-    TPM = counts_to_tpm(counts, eff_len),
-    FPKM = counts_to_fpkm(counts, eff_len),
+    TPM = sleuth::counts_to_tpm(counts, eff_len),
+    FPKM = sleuth::counts_to_fpkm(counts, eff_len),
     IsoPct = ifelse(counts > 0, 100.00, 0.0),
     stringsAsFactors = FALSE)
 }
@@ -22,29 +25,42 @@ counts_to_simulation <- function(counts, info, rsem_example, out_dir = "gen_sim"
   stopifnot( is(counts, "matrix") )
   stopifnot( is(info, "data.frame") )
 
+  # TODO: check that rsem_example$target_id and info$target_id are the same and
+  # in order.
+  if ( nrow(rsem_example) != nrow(info) ) {
+    stop("Inconsistent number of rows between 'info' and 'rsem_example'")
+  }
+
+  if ( !all(sort(rsem_example$transcript_id) == sort(info$target_id)) ) {
+    stop("Inconsistent target_id names between 'info' and 'rsem_example'")
+  }
+
+  if ( !all(rsem_example$transcript_id == info$target_id) ) {
+    cat("transcript_ids are in different order. sorting the rsem_example\n")
+    rsem_example <- rsem_example[match(info$target_id, rsem_example$transcript_id),]
+    stopifnot( all(rsem_example$transcript_id == info$target_id) )
+  }
+
   rsem_tbl <- lapply(1:ncol(counts),
-    function(cnt)
-    {
-      to_rsem(info$target_id, cnt, info$length, base_df$eff_len)
+    function(cnt) {
+      to_rsem(info$target_id, counts[,cnt], rsem_example$length,
+        rsem_example$effective_length)
     })
 
-  counts <- data.frame(counts)
-  colnames(counts) <- 1:ncol(exp_means)
-  counts$target_id <- base_df$target_id
+  #counts <- data.frame(counts)
 
   dir.create(out_dir)
-  write.table(base_df,
+  write.table(info,
     file = file.path(out_dir, "de.txt"),
     sep = "\t",
     row.names = FALSE, quote = FALSE, col.names = TRUE)
   write.table(counts,
     file = file.path(out_dir, "counts.txt"),
     sep = "\t",
-    row.names = FALSE, quote = FALSE, col.names = TRUE)
+    row.names = TRUE, quote = FALSE, col.names = TRUE)
 
   invisible(lapply(seq_along(rsem_tbl),
-    function(i)
-    {
+    function(i) {
       dir.create(file.path(out_dir, i))
       out_fname <- file.path(out_dir, i, paste0(i, ".isoforms.results"))
       write.table(rsem_tbl[[i]],
@@ -52,8 +68,8 @@ counts_to_simulation <- function(counts, info, rsem_example, out_dir = "gen_sim"
         sep = "\t", eol = "\n",
         row.names = FALSE, col.names = TRUE,
         quote = FALSE)
-      out_str <- paste("#!/bin/bash",
-        "",
+      out_str <- paste('#!/bin/bash',
+        '',
         'if [ "$#" -ne 3 ]; then',
         ' echo "Requires two arguments RSEM_REFERENCE RSEM_MODEL_FILE"',
         ' exit 1',
@@ -80,7 +96,7 @@ counts_to_simulation <- function(counts, info, rsem_example, out_dir = "gen_sim"
         )
       out_str <- c(out_str,
         "",
-        "gzip *.fq", "\n")
+        "gzip ${OUT_DIR}/*.fq", "\n")
 
       out_str <- paste(out_str, collapse = "\n")
 
@@ -93,6 +109,5 @@ counts_to_simulation <- function(counts, info, rsem_example, out_dir = "gen_sim"
       NULL
     }))
 
-
-  list(counts = counts, size = size, rsem = rsem_tbl)
+  list(counts = counts, rsem = rsem_tbl)
 }
