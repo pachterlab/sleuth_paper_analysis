@@ -40,7 +40,8 @@ prep_dds_sim <- function(dds, min_mean = 5, min_dispersion = 1e-6) {
   fit <- fit %>%
     mutate(sim_filt = !allZero & baseMean > min_mean)
 
-  fit
+  # reorder so that matches RSEM targets
+  fit[order(fit$target_id),]
 }
 
 #' @param sim_df a data.frame which contains columns baseMean, disp_final#' @param X the design matrix

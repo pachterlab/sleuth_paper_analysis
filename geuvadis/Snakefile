@@ -1,11 +1,16 @@
+ANNO_PRE = "annotation"
+
+RSEM_ANNO = "{ANNO_PRE}/Homo_sapiens.GRCh38.rel80.cdna.all_rsem/ref"
 
 def source_r(base, fname):
-    return 'Rscript --vanilla -e \'setwd("{0}")\' -e \'source("{1}")\''.format(base, fname)
+    return 'Rscript --vanilla --default-packages=methods,stats,utils -e \'setwd("{0}")\' -e \'source("{1}")\''.format(base, fname)
 
 rule all:
     input:
         'metadata/geu_meta.RData',
-        'results/prep_fin.RData'
+        'results/prep_fin.RData',
+        'sims/3_3_1_1/de_info.tsv.gz'
+        #'sims/3_3_10_1/de_info.tsv.gz'
 
 rule geuvadis_metadata:
     output:
@@ -25,9 +30,27 @@ rule gen_sim_script:
     input:
         'results/prep_fin.RData'
     output:
-        'sims/{n_a}_{n_b}_{n_sim}/de.txt'
+        'sims/{n_a}_{n_b}_{n_sim}_{seed}',
+        'sims/{n_a}_{n_b}_{n_sim}_{seed}/de_info.tsv.gz'
     shell:
-        source_r('R', 'gen_sim.R') + ' {n_sim} {n_a} {n_b}'
+        source_r('R', 'gen_sim.R') + ' '
+        '{wildcards.n_a}_{wildcards.n_b}_{wildcards.n_sim}_{wildcards.seed} '
+        '{wildcards.n_sim} '
+        '{wildcards.n_a} '
+        '{wildcards.n_b} '
+        '{wildcards.seed}'
 
-
-
+# rule gen_sim:
+#     input:
+#         'sims/{n_a}_{n_b}_{n_sim}_{seed}/de_info.tsv.gz'
+#     output:
+#
+# rule run_sim:
+#     input:
+#         'sims/{n_a}_{n_b}_{n_sim}_{seed}/sample_{id}/{run}/de_info.tsv.gz'
+#     output:
+#         'sims/{n_a}_{n_b}_{n_sim}_{seed}/sample_{id}/{run}/sim_1.fq.gz',
+#         'sims/{n_a}_{n_b}_{n_sim}_{seed}/sample_{id}/{run}/sim_2.fq.gz'
+#     shell:
+#         'sims/{n_a}_{n_b}_{n_sim}_{seed}/sample_{id}/{run}/
+#

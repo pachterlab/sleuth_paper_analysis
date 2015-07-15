@@ -1,14 +1,27 @@
+library("dplyr")
+
 #' Output a valid RSEM data.frame
 #'
 #'
 to_rsem <- function(target_id, counts, len, eff_len) {
-  data.frame(transcript_id = target_id, gene_id = target_id,
+  count_df <- data.frame(transcript_id = target_id, gene_id = target_id,
     length = len, effective_length = eff_len,
     expected_count = counts,
     TPM = sleuth::counts_to_tpm(counts, eff_len),
     FPKM = sleuth::counts_to_fpkm(counts, eff_len),
     IsoPct = ifelse(counts > 0, 100.00, 0.0),
     stringsAsFactors = FALSE)
+
+  discard_counts_eff_len <- count_df$effective_length < .Machine$double.eps
+  cat("Need to discard ", sum(discard_counts_eff_len),
+    " transcripts from simulation due to small counts\n")
+  cat("Total counts to discard: ",
+    sum(count_df$expected_count[discard_counts_eff_len]), "\n")
+
+  count_df$expected_count[discard_counts_eff_len] <- 0
+  count_df$IsoPct[discard_counts_eff_len] <- 0.0
+
+  count_df
 }
 
 #' Counts to rsem-simulate-expression
@@ -31,15 +44,11 @@ counts_to_simulation <- function(counts, info, rsem_example, out_dir = "gen_sim"
     stop("Inconsistent number of rows between 'info' and 'rsem_example'")
   }
 
-  if ( !all(sort(rsem_example$transcript_id) == sort(info$target_id)) ) {
-    stop("Inconsistent target_id names between 'info' and 'rsem_example'")
+  if ( !all(rsem_example$transcript_id == info$target_id) ) {
+    stop("transcript_ids are in different order.\n")
   }
 
-  if ( !all(rsem_example$transcript_id == info$target_id) ) {
-    cat("transcript_ids are in different order. sorting the rsem_example\n")
-    rsem_example <- rsem_example[match(info$target_id, rsem_example$transcript_id),]
-    stopifnot( all(rsem_example$transcript_id == info$target_id) )
-  }
+  # TODO: check and see if we assign DE to things that have effective length zero
 
   rsem_tbl <- lapply(1:ncol(counts),
     function(cnt) {
@@ -47,17 +56,21 @@ counts_to_simulation <- function(counts, info, rsem_example, out_dir = "gen_sim"
         rsem_example$effective_length)
     })
 
-  #counts <- data.frame(counts)
+  which_lt_eps <- info$effective_length < .Machine$double.eps
+  if ( any(info$is_de[which_lt_eps]) ) {
+    cat("***Warning: ", sum(info$is_de[which_lt_eps]),
+      " rows that are DE with effective length zero.\n")
+    print(info[info$is_de & which_lt_eps,])
+  }
 
-  dir.create(out_dir)
-  write.table(info,
-    file = file.path(out_dir, "de.txt"),
-    sep = "\t",
-    row.names = FALSE, quote = FALSE, col.names = TRUE)
+  dir.create(out_dir, showWarnings = FALSE)
+
+  counts_handle <- gzfile(file.path(out_dir, "counts.tsv.gz"), open = "w")
   write.table(counts,
-    file = file.path(out_dir, "counts.txt"),
+    file = counts_handle,
     sep = "\t",
     row.names = TRUE, quote = FALSE, col.names = TRUE)
+  close(counts_handle)
 
   invisible(lapply(seq_along(rsem_tbl),
     function(i) {
