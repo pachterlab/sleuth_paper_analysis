@@ -5,11 +5,18 @@ RSEM_ANNO = "{ANNO_PRE}/Homo_sapiens.GRCh38.rel80.cdna.all_rsem/ref"
 def source_r(base, fname):
     return 'Rscript --vanilla --default-packages=methods,stats,utils -e \'setwd("{0}")\' -e \'source("{1}")\''.format(base, fname)
 
+N_THREADS = 21
+
+KALLISTO = '/home/hjp/dev_versions/kallisto_elen'
+KAL_IDX = '../index/Homo_sapiens.GRCh38.rel80.cdna.all.kidx'
+
 rule all:
     input:
         'metadata/geu_meta.RData',
         'results/prep_fin.RData',
-        'sims/3_3_1_1/de_info.tsv.gz'
+        'sims/3_3_1_1/de_info.tsv.gz',
+        expand('sims/3_3_1_1/sample_1/{idx}/kallisto/abundance.h5',
+            idx = range(1, 7))
         #'sims/3_3_10_1/de_info.tsv.gz'
 
 rule geuvadis_metadata:
@@ -30,7 +37,7 @@ rule gen_sim_script:
     input:
         'results/prep_fin.RData'
     output:
-        'sims/{n_a}_{n_b}_{n_sim}_{seed}',
+        'sims/{n_a}_{n_b}_{n_sim}_{seed,\d+}',
         'sims/{n_a}_{n_b}_{n_sim}_{seed}/de_info.tsv.gz'
     shell:
         source_r('R', 'gen_sim.R') + ' '
@@ -40,6 +47,24 @@ rule gen_sim_script:
         '{wildcards.n_b} '
         '{wildcards.seed}'
 
+rule kallisto:
+    input:
+        'sims/{n_a}_{n_b}_{n_sim}_{seed}/de_info.tsv.gz'
+    output:
+        'results/{n_a}_{n_b}_{n_sim}_{seed}/sample_{num}/{id}',
+        'results/{n_a}_{n_b}_{n_sim}_{seed}/sample_{num}/{id}/kallisto',
+        'results/{n_a}_{n_b}_{n_sim}_{seed}/sample_{num}/{id}/kallisto/abundance.h5'
+    threads:
+        7
+    shell:
+        '{KALLISTO} quant '
+        '-i {KAL_IDX} '
+        '-b 100 '
+        '-t {threads} '
+        '-o {output[1]} '
+        '{output[0]}/sim_{wildcards.id}_1.fq.gz '
+        '{output[0]}/sim_{wildcards.id}_2.fq.gz'
+        
 # rule gen_sim:
 #     input:
 #         'sims/{n_a}_{n_b}_{n_sim}_{seed}/de_info.tsv.gz'
