@@ -27,7 +27,7 @@ make_sim_norm <- function(sim_df, X, size_factors = c(1, nrow(X))) {
   beta_full <- cbind(log(sim_df$baseMean), sim_df$log_fc)
   mu <- exp(beta_full %*% t(X))
 
-  counts <- matrix(rnorm(n * p, mean = mu, sd = sqrt(sim_df$baseVar), ncol = p)
+  counts <- matrix(rnorm(n * p, mean = mu, sd = sqrt(sim_df$baseVar)), ncol = p)
   counts <- round(counts)
   counts[sim_df$allZero,] <- 0
   counts[counts < 0] <- 0

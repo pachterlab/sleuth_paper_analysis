@@ -16,6 +16,7 @@ rule all:
         'results/prep_fin.RData',
         'results/prep_fin_lnorm.RData',
         'sims/3_3_1_1/de_info.tsv.gz',
+        'sims/norm/3_3_1_1/de_info.tsv.gz'
         #expand('sims/3_3_1_1/sample_1/{idx}/kallisto/abundance.h5',
         #    idx = range(1, 7))
         #'sims/3_3_10_1/de_info.tsv.gz'
@@ -34,23 +35,37 @@ rule prep_finnish_samples:
     shell:
         source_r('R', 'mean_disp_pairs.R')
 
-rule prep_finnish_samples_lnorm:
-    input:
-        'results/prep_fin.RData'
-    output:
-        'results/prep_fin_lnorm.RData'
-    shell:
-        source_r('R', 'mean_var_lnorm_pairs.R')
+# rule prep_finnish_samples_lnorm:
+#     input:
+#         'results/prep_fin.RData'
+#     output:
+#         'results/prep_fin_lnorm.RData'
+#     shell:
+#         source_r('R', 'mean_var_lnorm_pairs.R')
 
 rule gen_sim_script:
     input:
         'results/prep_fin.RData'
     output:
-        'sims/{n_a}_{n_b}_{n_sim}_{seed,\d+}',
-        'sims/{n_a}_{n_b}_{n_sim}_{seed}/de_info.tsv.gz'
+        'sims/{n_a,\d+}_{n_b}_{n_sim}_{seed,\d+}',
+        'sims/{n_a,\d+}_{n_b}_{n_sim}_{seed}/de_info.tsv.gz'
     shell:
         source_r('R', 'gen_sim.R') + ' '
         '{wildcards.n_a}_{wildcards.n_b}_{wildcards.n_sim}_{wildcards.seed} '
+        '{wildcards.n_sim} '
+        '{wildcards.n_a} '
+        '{wildcards.n_b} '
+        '{wildcards.seed}'
+
+rule gen_sim_script_norm:
+    input:
+        'results/prep_fin.RData'
+    output:
+        'sims/norm/{n_a,\d+}_{n_b}_{n_sim}_{seed,\d+}',
+        'sims/norm/{n_a,\d+}_{n_b}_{n_sim}_{seed}/de_info.tsv.gz'
+    shell:
+        source_r('R', 'gen_sim_norm.R') + ' '
+        'norm/{wildcards.n_a}_{wildcards.n_b}_{wildcards.n_sim}_{wildcards.seed} '
         '{wildcards.n_sim} '
         '{wildcards.n_a} '
         '{wildcards.n_b} '
