@@ -77,7 +77,7 @@ make_sim <- function(sim_df, X, size_factors = c(1, nrow(X))) {
 #' expression, (3) condition a factor vector indicating the condition for each
 #' sample
 simulate_counts <- function(prep_df, n_sim = 1, n_a = 3L, n_b = 3L, prop_de = 0.2,
-  seed = 37L, log_fc_sd = 1) {
+  seed = 37L, log_fc_sd = 1, sim_function = make_sim) {
   stopifnot( is(prep_df, "data.frame") )
 
   set.seed(seed)
@@ -103,7 +103,7 @@ simulate_counts <- function(prep_df, n_sim = 1, n_a = 3L, n_b = 3L, prop_de = 0.
 
   sim <- lapply(1:n_sim,
     function(i) {
-      s <- make_sim(prep_df, X)
+      s <- sim_function(prep_df, X)
       colnames(s)
       colnames(s) <- paste0(condition, c(1:n_a, 1:n_b))
       rownames(s) <- prep_df$target_id
