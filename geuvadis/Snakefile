@@ -1,11 +1,15 @@
-ANNO_PRE = "annotation"
+N_THREADS = 35
 
-RSEM_ANNO = "{ANNO_PRE}/Homo_sapiens.GRCh38.rel80.cdna.all_rsem/ref"
+ANNO = "../annotation"
+ANNO_PRE = "Homo_sapiens.GRCh38.rel80.cdna.all"
+
+ANNO_FA = "{0}/{1}.fa".format( ANNO, ANNO_PRE )
+BWT_IDX = "../index/{0}".format( ANNO_PRE )
+
+RSEM_ANNO = "{ANNO}/Homo_sapiens.GRCh38.rel80.cdna.all_rsem/ref"
 
 def source_r(base, fname):
     return 'Rscript --vanilla --default-packages=methods,stats,utils -e \'setwd("{0}")\' -e \'source("{1}")\''.format(base, fname)
-
-N_THREADS = 21
 
 KALLISTO = '/home/hjp/dev_versions/kallisto_elen'
 KAL_IDX = '../index/Homo_sapiens.GRCh38.rel80.cdna.all.kidx'
@@ -14,11 +18,18 @@ rule all:
     input:
         'metadata/geu_meta.RData',
         'results/prep_fin.RData',
-        'results/prep_fin_lnorm.RData',
+        #'results/prep_fin_lnorm.RData',
         'sims/3_3_1_1/de_info.tsv.gz',
-        'sims/norm/3_3_1_1/de_info.tsv.gz'
+        'sims/norm/3_3_1_1/de_info.tsv.gz',
         #expand('sims/3_3_1_1/sample_1/{idx}/kallisto/abundance.h5',
         #    idx = range(1, 7))
+        #expand('sims/norm/3_3_1_1/sample_1/{idx}/kallisto/abundance.h5',
+        #    idx = range(1, 7)),
+        expand('sims/3_3_1_1/sample_1/{idx}/kallisto/abundance.h5',
+            idx = range(1, 7)),
+        expand('results/3_3_1_1/sample_1/{id}/alignments/bwt_bitseq.bam', id = range(1,7)),
+        #expand('results/3_3_1_1/sample_1/{id}/bitseq/results.RData', id = range(1,7))
+        expand('results/3_3_1_1/sample_1/{id}/bitseq/bitseq.rpkm', id = range(1,7))
         #'sims/3_3_10_1/de_info.tsv.gz'
 
 rule geuvadis_metadata:
@@ -75,9 +86,29 @@ rule kallisto:
     input:
         'sims/{n_a}_{n_b}_{n_sim}_{seed}/de_info.tsv.gz'
     output:
-        'results/{n_a}_{n_b}_{n_sim}_{seed}/sample_{num}/{id}',
         'results/{n_a}_{n_b}_{n_sim}_{seed}/sample_{num}/{id}/kallisto',
         'results/{n_a}_{n_b}_{n_sim}_{seed}/sample_{num}/{id}/kallisto/abundance.h5'
+    params:
+        sims = 'results/{n_a}_{n_b}_{n_sim}_{seed}/sample_{num}/{id}'
+    threads:
+        7
+    shell:
+        '{KALLISTO} quant '
+        '-i {KAL_IDX} '
+        '-b 100 '
+        '-t {threads} '
+        '-o {output[0]} '
+        '{params.sims}/sim_{wildcards.id}_1.fq.gz '
+        '{params.sims}/sim_{wildcards.id}_2.fq.gz'
+
+
+rule kallisto_norm:
+    input:
+        'sims/norm/{n_a}_{n_b}_{n_sim}_{seed}/de_info.tsv.gz'
+    output:
+        'sims/norm/{n_a}_{n_b}_{n_sim}_{seed}/sample_{num}/{id}',
+        'sims/norm/{n_a}_{n_b}_{n_sim}_{seed}/sample_{num}/{id}/kallisto',
+        'sims/norm/{n_a}_{n_b}_{n_sim}_{seed}/sample_{num}/{id}/kallisto/abundance.h5'
     threads:
         7
     shell:
@@ -89,17 +120,42 @@ rule kallisto:
         '{output[0]}/sim_{wildcards.id}_1.fq.gz '
         '{output[0]}/sim_{wildcards.id}_2.fq.gz'
 
-# rule gen_sim:
-#     input:
-#         'sims/{n_a}_{n_b}_{n_sim}_{seed}/de_info.tsv.gz'
-#     output:
-#
-# rule run_sim:
-#     input:
-#         'sims/{n_a}_{n_b}_{n_sim}_{seed}/sample_{id}/{run}/de_info.tsv.gz'
-#     output:
-#         'sims/{n_a}_{n_b}_{n_sim}_{seed}/sample_{id}/{run}/sim_1.fq.gz',
-#         'sims/{n_a}_{n_b}_{n_sim}_{seed}/sample_{id}/{run}/sim_2.fq.gz'
-#     shell:
-#         'sims/{n_a}_{n_b}_{n_sim}_{seed}/sample_{id}/{run}/
-#
+########################################################################
+# bowtie alignments
+########################################################################
+
+rule bowtie_bitseq:
+    input:
+        'sims/{n_a}_{n_b}_{n_sim}_{seed}/de_info.tsv.gz'
+    output:
+        'results/{n_a}_{n_b}_{n_sim}_{seed}/sample_{num}/{id}/alignments/bwt_bitseq.bam'
+    params:
+        sims = 'sims/{n_a}_{n_b}_{n_sim}_{seed}/sample_{num}/{id}'
+    threads:
+        N_THREADS
+    shell:
+        'bowtie '
+        '-q '
+        '-v 3 '
+        '-3 0 '
+        '-p {threads} '
+        '-m 100 '
+        '--sam '
+        '--seed 37 '
+        '{BWT_IDX} '
+        '-1 <(zcat {params.sims}/sim_{wildcards.id}_1.fq.gz) '
+        '-2 <(zcat {params.sims}/sim_{wildcards.id}_2.fq.gz) | '
+        'samtools view -Sb - > {output[0]}'
+
+rule bitseq:
+    input:
+        'results/{n_a}_{n_b}_{n_sim}_{seed}/sample_{num}/{id,\d+}/alignments/bwt_bitseq.bam'
+    output:
+        'results/{n_a}_{n_b}_{n_sim}_{seed}/sample_{num}/{id}/bitseq',
+        'results/{n_a}_{n_b}_{n_sim}_{seed}/sample_{num}/{id}/bitseq/bitseq.rpkm'
+    benchmark:
+        'benchmarks/{n_a}_{n_b}_{n_sim}_{seed}/sample_{num}/{id}/bitseq.json'
+    threads: 1
+    shell:
+        source_r('R', 'run_bitseq.R') + 
+        ' bitseq_{wildcards.id} ../{output[0]}/bitseq ../{input} ../{ANNO_FA}'
