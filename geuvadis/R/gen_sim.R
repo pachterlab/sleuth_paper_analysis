@@ -19,8 +19,6 @@ sf_mode_1 <- function(n) {
   rep.int(1, n)
 }
 
-set.seed(seed)
-
 sf_mode_2 <- function(n) {
   nsamp <- 0
   res <- numeric(n)
@@ -46,6 +44,7 @@ sf_mode_2 <- function(n) {
   res[sample.int(length(res))]
 }
 
+set.seed(seed)
 sfs <- switch(sf_type,
   sf_mode_1(n_total),
   sf_mode_2(n_total)
