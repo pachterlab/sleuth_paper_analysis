@@ -69,7 +69,7 @@ rule gen_sim_script:
         'sims/{n_a,\d+}_{n_b}_{n_sim}_{seed}_{sf}/de_info.tsv.gz'
     shell:
         source_r('R', 'gen_sim.R') + ' '
-        '{wildcards.n_a}_{wildcards.n_b}_{wildcards.n_sim}_{wildcards.seed} '
+        '{wildcards.n_a}_{wildcards.n_b}_{wildcards.n_sim}_{wildcards.seed}_{wildcards.sf} '
         '{wildcards.n_sim} '
         '{wildcards.n_a} '
         '{wildcards.n_b} '
