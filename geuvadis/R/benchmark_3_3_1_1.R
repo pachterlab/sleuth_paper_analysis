@@ -1,6 +1,9 @@
 document("~/dev/sleuth")
 install("~/dev/sleuth")
 
+roxygenise("~/dev/sleuth")
+
+
 library("cowplot")
 library("sleuth")
 
@@ -35,15 +38,81 @@ pass_filt <- sobj$obs_norm %>%
 # pooled variance and technical variance estimator
 ########################################################################
 
+deg_free <- 4
+
 debugonce(me_equal_var)
 mev <- me_equal_var(sobj, pass_filt, function(x) log(x + 0.5))
 
-b_sd <- sapply(mev$beta_covars, function(x) sqrt(x[2,2]))
-b_sd <- data.frame(target_id = names(b_sd), sd_b = b_sd)
-rownames(b_sd) <- NULL
+X <- sobj$design_matrix
+A <- solve( t(X) %*% X )
 
-# tmp_summary <- sleuth:::sleuth_summarize_bootstrap_col(sobj, "est_counts",
-#   function(x) log(x + 0.5))
+ols_beta_covars <- lapply(mev$summary$rss,
+  function(i) {
+    (i / deg_free) * A
+  })
+
+all_se <- data.frame(
+  target_id = names(mev$beta_covars),
+  ols_var = sapply(ols_beta_covars, function(x) x[2,2]),
+  me_var = sapply(mev$beta_covars, function(x) x[2,2])
+  )
+
+m_ols <- with(all_se, median(ols_var, na.rm = TRUE))
+m_me <- with(all_se, median(me_var, na.rm = TRUE))
+m_diff <- m_me/m_ols
+all_se <- mutate(all_se, me_var_adj = ifelse(me_var == ols_var, me_var,
+# all_se <- mutate(all_se, me_var_adj = ifelse(FALSE, me_var,
+    me_var / m_diff))
+
+b <- sapply(mev$mes,
+  function(x) {
+    x$ols_fit$coefficients[2]
+  })
+names(b) <- names(mev$mes)
+b <- data.frame(target_id = names(b), b = b)
+
+b <- inner_join(all_se, b, by = "target_id")
+
+b_adj <- mutate(b, t_value = b / sqrt(me_var_adj))
+b_adj <- mutate(b_adj, pval = 2 * pt(abs(t_value), deg_free, lower.tail = FALSE))
+b_adj <- mutate(b_adj, qval = p.adjust(pval, method = "BH"))
+
+ggplot(all_se, aes(log2(ols_se), log2(me_se))) +
+  geom_point(alpha = 0.2) +
+  geom_abline(intercept = 0, slope = 1, colour = "blue")
+
+# looking at only shrinking things with sigma > 0
+
+mev$summary <- mutate(mev$summary, sigma_sq_gt0_shrink =
+  ifelse(sigma_sq > 0, pmax(sigma_sq, smooth_sigma_sq), 0))
+
+sigma_gt0_covars <- with(mev$summary, lapply(sigma_q_sq + sigma_sq_gt0_shrink,
+    function(x) {
+      x * A
+    }))
+all_se$gt0_var <- sapply(sigma_gt0_covars, function(x) x[2,2])
+
+b_gt0 <- b
+b_gt0$gt0_var <- all_se$gt0_var
+
+b_gt0 <- mutate(b_gt0, t_value = b / sqrt(gt0_var))
+b_gt0 <- mutate(b_gt0, pval = 2 * pt(abs(t_value), deg_free, lower.tail = FALSE))
+b_gt0 <- mutate(b_gt0, qval = p.adjust(pval, method = "BH"))
+
+# basic equal variance model
+mev_b <- sapply(mev$beta_covars, function(x) sqrt(x[2,2]))
+mev_b <- data.frame(target_id = names(mev_b), se_b = mev_b,
+  stringsAsFactors = FALSE)
+rownames(mev_b) <- NULL
+mev_b$b <- mev$summary$b1
+
+mev_b <- inner_join(mev_b, b, by = "target_id")
+
+mev_b <- mutate(mev_b, t_value = b / se_b)
+mev_b <- mutate(mev_b, pval = 2 * pt(abs(t_value), deg_free,
+    lower.tail = FALSE))
+mev_b <- mutate(mev_b, qval = p.adjust(pval, method = "BH"))
+
 bs_summary <- bs_sigma_summary(sobj, function(x) log(x + 0.5))
 
 mes <- me_model_by_row(sobj, sobj$design_matrix, bs_summary)
@@ -111,13 +180,12 @@ cor(ah2$se_b, b_sd$sd_b, use = "complete.obs", method = "spearman")
 
 pass_filt_names <- filter(pass_filt, count_filt)$target_id
 
-pass_filt_names <- filter(pass_filt_2, count_filt)$target_id
+#pass_filt_names <- filter(pass_filt_2, count_filt)$target_id
 
 
 ################################################################################
 # DESeq 2
 #library("DESeq2")
-
 
 obs_raw <- spread_abundance_by(sobj$obs_raw, "est_counts")
 obs_raw_filt <- obs_raw[pass_filt_names,]
@@ -137,6 +205,9 @@ deseq_res <- as.data.frame(deseq_res) %>%
   mutate(target_id = rownames(deseq_res)) %>%
   dplyr::rename(qval = padj, pval = pvalue)
 
+saveRDS(deseq_res, "../tmp/DESeq2.rds")
+
+deseq_res <- readRDS("../tmp/DESeq2.rds")
 
 ################################################################################
 # TODO: limma
@@ -158,6 +229,9 @@ limma_res <- limma_res %>%
   mutate(target_id = rownames(limma_res)) %>%
   dplyr::select(target_id, pval = P.Value, qval = adj.P.Val)
 
+saveRDS(limma_res, "../tmp/limma.rds")
+
+limma_res <- readRDS("../tmp/limma.rds")
 ################################################################################
 # edgeR
 ################################################################################
@@ -170,33 +244,65 @@ edgeR_res <- edgeR::topTags(et, n = nrow(obs_raw_filt)) %>%
   as.data.frame() %>%
   mutate(., target_id = rownames(.)) %>%
   dplyr::select(target_id, pval = PValue, qval = FDR)
+saveRDS(edgeR_res, "../tmp/edgeR.rds")
 
-z <- edgeR::estimateCommonDisp(dge)
-z <- edgeR::estimateTrendedDisp(z)
-et_z <- edgeR::exactTest(z)
-edgeR_trended_res <- edgeR::topTags(et_z, n = nrow(obs_raw_filt)) %>%
-  as.data.frame() %>%
-  mutate(., target_id = rownames(.)) %>%
-  dplyr::select(target_id, pval = PValue, qval = FDR)
+edgeR_res <- readRDS("../tmp/edgeR.rds")
 
+# z <- edgeR::estimateCommonDisp(dge)
+# z <- edgeR::estimateTrendedDisp(z)
+# et_z <- edgeR::exactTest(z)
+# edgeR_trended_res <- edgeR::topTags(et_z, n = nrow(obs_raw_filt)) %>%
+#   as.data.frame() %>%
+#   mutate(., target_id = rownames(.)) %>%
+#   dplyr::select(target_id, pval = PValue, qval = FDR)
+
+
+# de_bench <- new_de_benchmark(
+#   list(
+#     deseq_res,
+#     ah2,
+#     limma_res,
+#     edgeR_res,
+#     #edgeR_trended_res,
+#     betas
+#     ),
+#   c(
+#     "DESeq2",
+#     "sleuth (ME)",
+#     "voom",
+#     "edgeR (tagwise)",
+#     #"edgeR (trended)",
+#     "sleuth (White)"
+#     ), de_info)
 
 de_bench <- new_de_benchmark(
   list(
     deseq_res,
-    ah2,
+    #mev_b,
+    b_adj,
     limma_res,
     edgeR_res,
+    b_gt0
     #edgeR_trended_res,
-    betas
     ),
   c(
     "DESeq2",
-    "sleuth (ME)",
+    "sleuth (MEV)",
     "voom",
     "edgeR (tagwise)",
+    "sleuth (MEV gt0)"
     #"edgeR (trended)",
-    "sleuth (White)"
+    #"sleuth (White)"
     ), de_info)
+
+fdr_nde_plot(de_bench, TRUE) +
+  #theme_bw(25) +
+  xlim(2000, 7500) +
+  #xlim(5000, 7500) +
+  #xlim(0, 7500) +
+  #ylim(0, 0.2) +
+  ylim(0, 1) +
+  theme(legend.position = c(0.1, 0.85))
 
 fdr_nde_plot(de_bench, FALSE) +
   #theme_bw(25) +
