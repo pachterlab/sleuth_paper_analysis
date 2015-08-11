@@ -6,6 +6,12 @@ if( length(args) != 5) {
 
 cat("Args: ", args, "\n")
 
+# sim_name <- 'meow'
+# n_sim <- 1
+# n_a <- 3
+# n_b <- 3
+# seed <- 9999
+
 sim_name <- args[1]
 n_sim <- as.integer(args[2])
 n_a <- as.integer(args[3])
@@ -21,13 +27,18 @@ source("../../simulation_core/R/sim_to_rsem.R")
 load("../results/prep_fin.RData", verbose = TRUE)
 
 cat("Generating counts\n")
+# debugonce(simulate_counts)
+# 
+# debugonce(make_sim)
+
 sim <- simulate_counts(prep_fin,
   n_sim = n_sim,
   n_a = n_a,
   n_b = n_b,
   prop_de = 0.20,
   seed = seed,
-  log_fc_sd = 1)
+  log_fc_sd = 1,
+  size_factors = 1:6)
 
 rsem_fhandle <- gzfile("../results/rsem/HG00365_7/out.isoforms.results.gz", open = "r")
 rsem_res <- read.table(rsem_fhandle, header = TRUE, stringsAsFactors = FALSE)
@@ -49,6 +60,6 @@ invisible(lapply(seq_along(sim$counts),
   function(i) {
     cat("Writing simulation ", i, "\n")
     invisible(counts_to_simulation(sim$counts[[i]], sim$info, rsem_res,
-      file.path(sim_out, paste0("sample_", i))))
+      file.path(sim_out, paste0("exp_", i))))
     NULL
   }))

@@ -47,7 +47,7 @@ prep_dds_sim <- function(dds, min_mean = 5, min_dispersion = 1e-6) {
 #' @param sim_df a data.frame which contains columns baseMean, disp_final#' @param X the design matrix
 #' @param size_factors the scaling of each sample
 #' @return a matrix of integer counts
-make_sim <- function(sim_df, X, size_factors = c(1, nrow(X))) {
+make_sim <- function(sim_df, X, size_factors = rep(1, nrow(X))) {
   # number of targets
   n <- nrow(sim_df)
   p <- nrow(X)
@@ -55,6 +55,8 @@ make_sim <- function(sim_df, X, size_factors = c(1, nrow(X))) {
   disp <- sim_df$disp_final
   beta_full <- cbind( log(sim_df$baseMean), sim_df$log_fc )
   mu <- exp( beta_full %*% t(X) )
+
+  mu <- sweep(mu, 2, size_factors, `*`)
 
   matrix(rnbinom(n * p, mu = mu, size = 1 / disp), ncol = p)
 }
@@ -77,17 +79,20 @@ make_sim <- function(sim_df, X, size_factors = c(1, nrow(X))) {
 #' expression, (3) condition a factor vector indicating the condition for each
 #' sample
 simulate_counts <- function(prep_df, n_sim = 1, n_a = 3L, n_b = 3L, prop_de = 0.2,
-  seed = 37L, log_fc_sd = 1, sim_function = make_sim) {
+  seed = 37L, log_fc_sd = 1, sim_function = make_sim, size_factors = rep(1, n_a + n_b)) {
   stopifnot( is(prep_df, "data.frame") )
 
   set.seed(seed)
-  n_de <- as.integer(ceiling(nrow(prep_df) * prop_de))
-  n_null <- as.integer(nrow(prep_df) - n_de)
+  # n_de <- as.integer(ceiling(nrow(prep_df) * prop_de))
+  # n_null <- as.integer(nrow(prep_df) - n_de)
+  n_pass_filt <- sum(prep_df$sim_filt)
+  n_de <- as.integer(ceiling(n_pass_filt * prop_de))
+  n_null <- as.integer(n_pass_filt - n_de)
 
   condition <- factor(c(rep("A", n_a), rep("B", n_b)))
   X <- model.matrix(~ condition)
 
-  row_idx_de <- sample(which(prep_df$sim_filt), n_de, replace = TRUE)
+  row_idx_de <- sample(which(prep_df$sim_filt), n_de, replace = FALSE)
 
   # choose which will be DE
   prep_df <- prep_df %>%
@@ -103,7 +108,7 @@ simulate_counts <- function(prep_df, n_sim = 1, n_a = 3L, n_b = 3L, prop_de = 0.
 
   sim <- lapply(1:n_sim,
     function(i) {
-      s <- sim_function(prep_df, X)
+      s <- sim_function(prep_df, X, size_factors = size_factors)
       colnames(s)
       colnames(s) <- paste0(condition, c(1:n_a, 1:n_b))
       rownames(s) <- prep_df$target_id
@@ -111,7 +116,7 @@ simulate_counts <- function(prep_df, n_sim = 1, n_a = 3L, n_b = 3L, prop_de = 0.
     })
 
   list(counts = sim, info = prep_df, condition = condition,
-    size_factors = rep(1, nrow(X)))
+    size_factors = size_factors)
 }
 
 # debugonce(simulate_counts)
