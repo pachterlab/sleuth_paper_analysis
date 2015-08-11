@@ -18,20 +18,26 @@ rule all:
     input:
         'metadata/geu_meta.RData',
         'results/prep_fin.RData',
+        'sims/3_3_1_1_1/de_info.tsv.gz',
+        expand('results/3_3_1_1_1/exp_1/{idx}/kallisto/abundance.h5',
+           idx = range(1, 7)),
+        'sims/3_3_1_1_2/de_info.tsv.gz',
+        expand('results/3_3_1_1_2/exp_1/{idx}/kallisto/abundance.h5',
+           idx = range(1, 7))
+
         #'results/prep_fin_lnorm.RData',
-        'sims/3_3_1_1/de_info.tsv.gz',
-        'sims/norm/3_3_1_1/de_info.tsv.gz',
-        #expand('sims/3_3_1_1/sample_1/{idx}/kallisto/abundance.h5',
-        #    idx = range(1, 7))
-        #expand('sims/norm/3_3_1_1/sample_1/{idx}/kallisto/abundance.h5',
-        #    idx = range(1, 7)),
-        expand('sims/3_3_1_1/sample_1/{idx}/kallisto/abundance.h5',
-            idx = range(1, 7)),
-        expand('results/3_3_1_1/sample_1/{id}/alignments/bwt_bitseq.bam', id = range(1,7)),
-        #expand('results/3_3_1_1/sample_1/{id}/bitseq/results.RData', id = range(1,7))
-        expand('results/3_3_1_1/sample_1/{id}/bitseq/bitseq.rpkm', id = range(1,7)),
-        expand('results/3_3_1_1/sample_1/{id}/rsem/out.isoforms.results', id = range(1,7))
-        #'sims/3_3_10_1/de_info.tsv.gz'
+        # 'sims/3_3_1_1/de_info.tsv.gz',
+        # 'sims/norm/3_3_1_1/de_info.tsv.gz',
+        # #expand('sims/3_3_1_1/sample_1/{idx}/kallisto/abundance.h5',
+        # #    idx = range(1, 7))
+        # #expand('sims/norm/3_3_1_1/sample_1/{idx}/kallisto/abundance.h5',
+        # #    idx = range(1, 7)),
+        # expand('sims/3_3_1_1/sample_1/{idx}/kallisto/abundance.h5',
+        #     idx = range(1, 7)),
+        # expand('results/3_3_1_1/sample_1/{id}/alignments/bwt_bitseq.bam', id = range(1,7)),
+        # #expand('results/3_3_1_1/sample_1/{id}/bitseq/results.RData', id = range(1,7))
+        # expand('results/3_3_1_1/sample_1/{id}/bitseq/bitseq.rpkm', id = range(1,7))
+        # #'sims/3_3_10_1/de_info.tsv.gz'
 
 rule geuvadis_metadata:
     output:
@@ -59,15 +65,16 @@ rule gen_sim_script:
     input:
         'results/prep_fin.RData'
     output:
-        'sims/{n_a,\d+}_{n_b}_{n_sim}_{seed,\d+}',
-        'sims/{n_a,\d+}_{n_b}_{n_sim}_{seed}/de_info.tsv.gz'
+        'sims/{n_a,\d+}_{n_b}_{n_sim}_{seed,\d+}_{sf,\d+}',
+        'sims/{n_a,\d+}_{n_b}_{n_sim}_{seed}_{sf}/de_info.tsv.gz'
     shell:
         source_r('R', 'gen_sim.R') + ' '
         '{wildcards.n_a}_{wildcards.n_b}_{wildcards.n_sim}_{wildcards.seed} '
         '{wildcards.n_sim} '
         '{wildcards.n_a} '
         '{wildcards.n_b} '
-        '{wildcards.seed}'
+        '{wildcards.seed} '
+        '{wildcards.sf}'
 
 rule gen_sim_script_norm:
     input:
@@ -85,12 +92,12 @@ rule gen_sim_script_norm:
 
 rule kallisto:
     input:
-        'sims/{n_a}_{n_b}_{n_sim}_{seed}/de_info.tsv.gz'
+        'sims/{n_a}_{n_b}_{n_sim}_{seed}_{sf}/de_info.tsv.gz'
     output:
-        'results/{n_a}_{n_b}_{n_sim}_{seed}/sample_{num}/{id}/kallisto',
-        'results/{n_a}_{n_b}_{n_sim}_{seed}/sample_{num}/{id}/kallisto/abundance.h5'
+        'results/{n_a}_{n_b}_{n_sim}_{seed}_{sf}/exp_{num}/{id}/kallisto',
+        'results/{n_a}_{n_b}_{n_sim}_{seed}_{sf}/exp_{num}/{id}/kallisto/abundance.h5'
     params:
-        sims = 'results/{n_a}_{n_b}_{n_sim}_{seed}/sample_{num}/{id}'
+        sims = 'results/{n_a}_{n_b}_{n_sim}_{seed}_{sf}/exp_{num}/{id}'
     threads:
         7
     shell:
@@ -183,7 +190,7 @@ rule bitseq:
         'benchmarks/{n_a}_{n_b}_{n_sim}_{seed}/sample_{num}/{id}/bitseq.json'
     threads: 1
     shell:
-        source_r('R', 'run_bitseq.R') + 
+        source_r('R', 'run_bitseq.R') +
         ' bitseq_{wildcards.id} ../{output[0]}/bitseq ../{input} ../{ANNO_FA}'
 
 rule rsem:
