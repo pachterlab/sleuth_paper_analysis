@@ -6,7 +6,7 @@ ANNO_PRE = "Homo_sapiens.GRCh38.rel80.cdna.all"
 ANNO_FA = "{0}/{1}.fa".format( ANNO, ANNO_PRE )
 BWT_IDX = "../index/{0}".format( ANNO_PRE )
 
-RSEM_ANNO = "{ANNO}/Homo_sapiens.GRCh38.rel80.cdna.all_rsem/ref"
+RSEM_ANNO = "../index/Homo_sapiens.GRCh38.rel80.cdna.all_rsem/ref"
 
 def source_r(base, fname):
     return 'Rscript --vanilla --default-packages=methods,stats,utils -e \'setwd("{0}")\' -e \'source("{1}")\''.format(base, fname)
@@ -29,7 +29,8 @@ rule all:
             idx = range(1, 7)),
         expand('results/3_3_1_1/sample_1/{id}/alignments/bwt_bitseq.bam', id = range(1,7)),
         #expand('results/3_3_1_1/sample_1/{id}/bitseq/results.RData', id = range(1,7))
-        expand('results/3_3_1_1/sample_1/{id}/bitseq/bitseq.rpkm', id = range(1,7))
+        expand('results/3_3_1_1/sample_1/{id}/bitseq/bitseq.rpkm', id = range(1,7)),
+        expand('results/3_3_1_1/sample_1/{id}/rsem/out.isoforms.results', id = range(1,7))
         #'sims/3_3_10_1/de_info.tsv.gz'
 
 rule geuvadis_metadata:
@@ -147,6 +148,31 @@ rule bowtie_bitseq:
         '-2 <(zcat {params.sims}/sim_{wildcards.id}_2.fq.gz) | '
         'samtools view -Sb - > {output[0]}'
 
+rule bowtie_rsem:
+    input:
+        'sims/{n_a}_{n_b}_{n_sim}_{seed}/de_info.tsv.gz'
+    output:
+        'results/{n_a}_{n_b}_{n_sim}_{seed}/sample_{num}/{id}/alignments/bwt_rsem.bam'
+    params:
+        sims = 'sims/{n_a}_{n_b}_{n_sim}_{seed}/sample_{num}/{id}'
+    threads:
+        N_THREADS
+    shell:
+        'bowtie '
+        '-q '
+        '-n 2 '
+        '-e 99999999 '
+        '-m 200 '
+        '-I 1 '
+        '-X 1000 '
+        '-p {threads} '
+        '--sam '
+        '--seed 37 '
+        '{BWT_IDX} '
+        '-1 <(zcat {params.sims}/sim_{wildcards.id}_1.fq.gz) '
+        '-2 <(zcat {params.sims}/sim_{wildcards.id}_2.fq.gz) | '
+        'samtools view -Sb - > {output[0]}'
+
 rule bitseq:
     input:
         'results/{n_a}_{n_b}_{n_sim}_{seed}/sample_{num}/{id,\d+}/alignments/bwt_bitseq.bam'
@@ -159,3 +185,21 @@ rule bitseq:
     shell:
         source_r('R', 'run_bitseq.R') + 
         ' bitseq_{wildcards.id} ../{output[0]}/bitseq ../{input} ../{ANNO_FA}'
+
+rule rsem:
+    input:
+        'results/{n_a}_{n_b}_{n_sim}_{seed}/sample_{num}/{id,\d+}/alignments/bwt_rsem.bam'
+    params:
+        base = 'results/{n_a}_{n_b}_{n_sim}_{seed}/sample_{num}/{id}/rsem/out'
+    output:
+        'results/{n_a}_{n_b}_{n_sim}_{seed}/sample_{num}/{id}/rsem/out.isoforms.results'
+    threads: N_THREADS
+    shell:
+        'rsem-calculate-expression '
+        '--bam '
+        '--paired-end '
+        '--no-bam-output '
+        '-p {threads} '
+        '{input} '
+        '{RSEM_ANNO} '
+        '{params.base}'
