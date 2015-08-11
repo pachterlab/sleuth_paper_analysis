@@ -1,22 +1,56 @@
 args <- commandArgs(trailingOnly = TRUE)
 
-if( length(args) != 5) {
-  stop("Usage: gen_sim.R BASE_OUT N_SIMULATIONS N_A N_B")
+if( length(args) != 6) {
+  stop("Usage: gen_sim.R BASE_OUT N_SIMULATIONS N_A N_B SEED SIZE_FACTOR_TYPE")
 }
 
 cat("Args: ", args, "\n")
-
-# sim_name <- 'meow'
-# n_sim <- 1
-# n_a <- 3
-# n_b <- 3
-# seed <- 9999
 
 sim_name <- args[1]
 n_sim <- as.integer(args[2])
 n_a <- as.integer(args[3])
 n_b <- as.integer(args[4])
 seed <- as.integer(args[5])
+sf_type <- as.integer(args[6])
+
+n_total <- n_a + n_b
+
+sf_mode_1 <- function(n) {
+  rep.int(1, n)
+}
+
+set.seed(seed)
+
+sf_mode_2 <- function(n) {
+  nsamp <- 0
+  res <- numeric(n)
+
+  while (nsamp < n) {
+    if ((n - nsamp) == 1) {
+      nsamp <- nsamp + 1
+      res[nsamp] <- 1
+    } else {
+      eq <- sample(c(TRUE, FALSE), 1)
+      if (eq) {
+        nsamp <- nsamp + 1
+        res[nsamp] <- 1
+      } else {
+        nsamp <- nsamp + 1
+        res[nsamp] <- 1/3
+        nsamp <- nsamp + 1
+        res[nsamp] <- 3
+      }
+    }
+  }
+
+  res[sample.int(length(res))]
+}
+
+sfs <- switch(sf_type,
+  sf_mode_1(n_total),
+  sf_mode_2(n_total)
+  )
+
 
 sim_base <- '../sims'
 sim_out <- file.path(sim_base, sim_name)
@@ -55,6 +89,8 @@ write.table(sim$info,
   quote = FALSE,
   col.names = TRUE)
 close(de_handle)
+
+saveRDS(sim, file.path(sim_out, 'sim.rds'))
 
 invisible(lapply(seq_along(sim$counts),
   function(i) {
