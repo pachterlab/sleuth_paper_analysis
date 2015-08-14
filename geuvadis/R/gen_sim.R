@@ -71,7 +71,7 @@ sim <- simulate_counts(prep_fin,
   prop_de = 0.20,
   seed = seed,
   log_fc_sd = 1,
-  size_factors = 1:6)
+  size_factors = sfs)
 
 rsem_fhandle <- gzfile("../results/rsem/HG00365_7/out.isoforms.results.gz", open = "r")
 rsem_res <- read.table(rsem_fhandle, header = TRUE, stringsAsFactors = FALSE)
