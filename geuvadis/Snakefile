@@ -7,6 +7,7 @@ ANNO_FA = "{0}/{1}.fa".format( ANNO, ANNO_PRE )
 BWT_IDX = "../index/{0}".format( ANNO_PRE )
 
 RSEM_ANNO = "../index/Homo_sapiens.GRCh38.rel80.cdna.all_rsem/ref"
+RSEM_MODEL = 'results/rsem/HG00365_7/out.stat/out.model'
 
 def source_r(base, fname):
     return 'Rscript --vanilla --default-packages=methods,stats,utils -e \'setwd("{0}")\' -e \'source("{1}")\''.format(base, fname)
@@ -76,6 +77,21 @@ rule gen_sim_script:
         '{wildcards.seed} '
         '{wildcards.sf}'
 
+rule make_sim:
+    input:
+        'sims/{n_a,\d+}_{n_b}_{n_sim}_{seed,\d+}_{sf,\d+}',
+        'sims/{n_a,\d+}_{n_b}_{n_sim}_{seed}_{sf}/de_info.tsv.gz'
+    output:
+        'sims/{n_a}_{n_b}_{n_sim}_{seed}_{sf}/exp_{num}/{id}/sim_{id}_1.fq.gz',
+        'sims/{n_a}_{n_b}_{n_sim}_{seed}_{sf}/exp_{num}/{id}/sim_{id}_2.fq.gz'
+    params:
+        sims = 'sims/{n_a}_{n_b}_{n_sim}_{seed}_{sf}/exp_{num}/{id}'
+    shell:
+        '{params.sims}/sim_{wildcards.id}.sh '
+        '{RSEM_ANNO} '
+        '{RSEM_MODEL} '
+        '{params.sims}'
+
 rule gen_sim_script_norm:
     input:
         'results/prep_fin.RData'
@@ -92,7 +108,8 @@ rule gen_sim_script_norm:
 
 rule kallisto:
     input:
-        'sims/{n_a}_{n_b}_{n_sim}_{seed}_{sf}/de_info.tsv.gz'
+        'sims/{n_a}_{n_b}_{n_sim}_{seed}_{sf}/exp_{num}/{id}/sim_{id}_1.fq.gz',
+        'sims/{n_a}_{n_b}_{n_sim}_{seed}_{sf}/exp_{num}/{id}/sim_{id}_2.fq.gz'
     output:
         'results/{n_a}_{n_b}_{n_sim}_{seed}_{sf}/exp_{num}/{id}/kallisto',
         'results/{n_a}_{n_b}_{n_sim}_{seed}_{sf}/exp_{num}/{id}/kallisto/abundance.h5'
@@ -106,8 +123,10 @@ rule kallisto:
         '-b 100 '
         '-t {threads} '
         '-o {output[0]} '
-        '{params.sims}/sim_{wildcards.id}_1.fq.gz '
-        '{params.sims}/sim_{wildcards.id}_2.fq.gz'
+        '{input[0]} '
+        '{input[1]}'
+        #'{params.sims}/sim_{wildcards.id}_1.fq.gz '
+        #'{params.sims}/sim_{wildcards.id}_2.fq.gz'
 
 
 rule kallisto_norm:
