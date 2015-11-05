@@ -9,6 +9,10 @@ BWT_IDX = "../index/{0}".format( ANNO_PRE )
 RSEM_ANNO = "../index/Homo_sapiens.GRCh38.rel80.cdna.all_rsem/ref"
 RSEM_MODEL = 'results/rsem/HG00365_7/out.stat/out.model'
 
+GTF = ANNO + '/Homo_sapiens.GRCh38.80.gtf'
+
+GENOME = '/home/hjp/kallisto_paper_analysis/GRCh38_80/Homo_sapiens.GRCh38.dna.primary_assembly.fa'
+
 def source_r(base, fname):
     return 'Rscript --vanilla --default-packages=methods,stats,utils -e \'setwd("{0}")\' -e \'source("{1}")\''.format(base, fname)
 
@@ -24,7 +28,15 @@ rule all:
            idx = range(1, 7)),
         'sims/3_3_1_1_2/de_info.tsv.gz',
         expand('results/3_3_1_1_2/exp_1/{idx}/kallisto/abundance.h5',
-           idx = range(1, 7))
+           idx = range(1, 7)),
+        'index/star/Genome',
+        expand('results/3_3_1_1_1/exp_1/{idx}/starAligned.sortedByCoord.out.bam',
+           idx = range(1, 7)),
+        expand('results/3_3_1_1_1/exp_1/{idx}/featureCounts.txt', idx = range(1, 7)),
+        expand('results/3_3_1_1_1/exp_1/counts.tsv'),
+        expand('results/3_3_1_1_2/exp_1/{idx}/starAligned.sortedByCoord.out.bam', idx = range(1, 7)),
+        expand('results/3_3_1_1_2/exp_1/{idx}/featureCounts.txt', idx = range(1, 7)),
+        expand('results/3_3_1_1_2/exp_1/counts.tsv')
 
         #'results/prep_fin_lnorm.RData',
         # 'sims/3_3_1_1/de_info.tsv.gz',
@@ -229,3 +241,65 @@ rule rsem:
         '{input} '
         '{RSEM_ANNO} '
         '{params.base}'
+
+
+rule prep_star:
+    output:
+        'index/star'
+    shell: 'mkdir {output}'
+
+rule star_index:
+    output:
+        'index/star/Genome'
+    shell:
+        'STAR '
+        '--runThreadN 20 '
+        '--runMode genomeGenerate '
+        '--genomeDir index/star '
+        '--genomeFastaFiles {GENOME} '
+        '--sjdbGTFfile {GTF} '
+        '--sjdbOverhang 75 ' # read length-1
+
+rule star:
+    input:
+        'sims/{n_a}_{n_b}_{n_sim}_{seed}_{sf}/exp_{num}/{id}/sim_{id}_1.fq.gz',
+        'sims/{n_a}_{n_b}_{n_sim}_{seed}_{sf}/exp_{num}/{id}/sim_{id}_2.fq.gz'
+    params:
+        base = 'results/{n_a}_{n_b}_{n_sim}_{seed}_{sf}/exp_{num}/{id}/star'
+
+    output:
+        'results/{n_a}_{n_b}_{n_sim}_{seed}_{sf}/exp_{num}/{id}/starAligned.sortedByCoord.out.bam'
+    threads: N_THREADS
+    shell:
+        'STAR '
+        '--runThreadN {threads} '
+        '--genomeDir index/star '
+        '--readFilesIn {input[0]} {input[1]} '
+        '--readFilesCommand zcat '
+        '--outFileNamePrefix {params.base} '
+        '--outSAMtype BAM SortedByCoordinate '
+
+rule featureCounts:
+    input:
+        'results/{n_a}_{n_b}_{n_sim}_{seed}_{sf}/exp_{num}/{id}/starAligned.sortedByCoord.out.bam'
+    output:
+        'results/{n_a}_{n_b}_{n_sim}_{seed}_{sf}/exp_{num}/{id}/featureCounts.txt'
+    threads: N_THREADS
+    shell:
+        'featureCounts '
+        '-a {GTF} '
+        '-o {output} '
+        '-T {threads} '
+        '-p '
+        '{input}'
+
+rule aggregate_counts:
+    # input:
+    #     'results/{n_a}_{n_b}_{n_sim}_{seed}_{sf}/exp_{num}/
+    output:
+        'results/{n_a}_{n_b}_{n_sim}_{seed}_{sf}/exp_{num}/counts.tsv'
+    params:
+        base = 'results/{n_a}_{n_b}_{n_sim}_{seed}_{sf}/exp_{num}'
+    threads: 1
+    shell:
+        source_r('R', 'merge_counts.R') +  ' ../{params.base} ../{output}'
