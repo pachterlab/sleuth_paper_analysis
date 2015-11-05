@@ -44,7 +44,8 @@ prep_dds_sim <- function(dds, min_mean = 5, min_dispersion = 1e-6) {
   fit[order(fit$target_id),]
 }
 
-#' @param sim_df a data.frame which contains columns baseMean, disp_final#' @param X the design matrix
+#' @param sim_df a data.frame which contains columns baseMean, disp_final#'
+#' @param X the design matrix
 #' @param size_factors the scaling of each sample
 #' @return a matrix of integer counts
 make_sim <- function(sim_df, X, size_factors = rep(1, nrow(X))) {
