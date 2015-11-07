@@ -123,6 +123,29 @@ simulate_counts <- function(prep_df, n_sim = 1, n_a = 3L, n_b = 3L, prop_de = 0.
 # debugonce(simulate_counts)
 # debugonce(make_sim)
 
+#' simulate from a truncated normal
+#'
+#' simulate from a truncated normal which is missing the center part of the mass.
+#' simulation is performed using rejection sampling.
+#'
+#' @param n the number of samples
+#' @param min_magnitude the minimum magnitude of a sample to accept
+#' @param ... additional parameters sent to \code{rnorm}
+#' @return \code{n} samples that all have magnitude greater than \code{min_magnitude}
+truncated_normal <- function(n, min_magnitude, ...) {
+  samples <- numeric(n)
+  i <- 1
+  while (i <= n) {
+    current_sample <- rnorm(1, ...)
+    if (abs(current_sample) >= min_magnitude) {
+      samples[i] <- current_sample
+      i <- i + 1
+    }
+  }
+
+  samples
+}
+
 # let's get the deepest sample from female Finns to use as our RSEM example for
 # effective lengths and lengths.
 #
