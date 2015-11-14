@@ -1,9 +1,22 @@
 devtools::document("~/dev/sleuth")
-
 devtools::install("~/dev/sleuth")
+
+# dev_mode()
+
+devtools::document("~/dev/mamabear")
+devtools::install("~/dev/mamabear")
 
 library("cowplot")
 library("sleuth")
+library("mamabear")
+
+all_ones <- function(x) {
+  p <- ncol(x)
+  sf <- rep.int(1, p)
+  names(sf) <- colnames(x)
+
+  sf
+}
 
 sim_name <- '3_3_1_1_1'
 sims_dir <- file.path('../sims', sim_name)
@@ -17,25 +30,34 @@ kal_dirs <- file.path(base_dir, "exp_1", 1:6, "kallisto")
 
 s2c <- data.frame(sample = paste0("sample_", 1:6),
   condition = rep(c("A", "B"), each = 3), stringsAsFactors = FALSE)
+s2c <- dplyr::mutate(s2c, path = kal_dirs)
 
-sobj <- sleuth_prep(kal_dirs, s2c$sample, s2c, ~ condition)
+so <- sleuth_prep(s2c, ~ condition, norm_fun_counts = all_ones, max_bootstrap = 30)
+# so <- sleuth_prep(s2c, ~ condition, norm_fun_counts = all_ones, min_prop = 0.5, min_reads = 10)
 
-sobj <- sleuth_fit(sobj)
+so <- sleuth_fit(so)
 
-models(sobj)
+models(so)
 
-sobj <- sleuth_test(sobj, 'conditionB')
-models(sobj)
+so <- sleuth_wt(so, 'conditionB')
+models(so)
 
-sleuth_interact(sobj)
-sres <- sleuth_results(sobj, 'conditionB')
+# sleuth_live(so)
 
+sres <- sleuth_results(so, 'conditionB') %>%
+  dplyr::select(target_id, pval, qval)
+
+so <- sleuth_fit(so, ~1, "reduced")
+
+so <- sleuth_lrt(so, "reduced", "full")
+s_ratio <- sleuth_results(so, 'reduced:full', test_type = 'lrt')
+s_ratio <- dplyr::select(s_ratio, target_id, pval, qval)
 ################################################################################
 # DESeq 2
 #library("DESeq2")
-pass_filt_names <- sobj$filter_df[['target_id']]
+pass_filt_names <- so$filter_df[['target_id']]
 
-obs_raw <- spread_abundance_by(sobj$obs_raw, "est_counts")
+obs_raw <- sleuth:::spread_abundance_by(so$obs_raw, "est_counts")
 obs_raw_filt <- obs_raw[pass_filt_names,]
 
 dds <- DESeq2::DESeqDataSetFromMatrix(countData = round(obs_raw_filt),
@@ -43,7 +65,7 @@ dds <- DESeq2::DESeqDataSetFromMatrix(countData = round(obs_raw_filt),
   design = ~ condition)
 
 # force to not estimate size factors
-#DESeq2::sizeFactors(dds) <- rep(1, 6)
+DESeq2::sizeFactors(dds) <- rep(1, 6)
 
 #dds <- DESeq2::DESeq(dds, fitType='local')
 dds <- DESeq2::DESeq(dds)
@@ -88,20 +110,35 @@ edgeR_res <- edgeR::topTags(et, n = nrow(obs_raw_filt)) %>%
 ########################################################################
 # benchmarks
 ########################################################################
+library("mamabear")
 
 de_bench <- new_de_benchmark(
   list(
     deseq_res,
     limma_res,
     edgeR_res,
-    sres
+    sres,
+    s_ratio
     ),
   c(
     "DESeq2",
     "voom",
     "edgeR (tagwise)",
-    "sleuth (MEV)"
+    "sleuth wt",
+    "sleuth lrt"
     ), de_info)
+
+# debugonce(fdr_nde_plot)
+
+fdr_nde_plot(de_bench, FALSE) +
+  # xlim(0, 2000) +
+  xlim(0, 1500) +
+  ylim(0, 0.10) +
+  theme(legend.position = c(0.1, 0.80))+
+  xlab('number of transcripts called DE') +
+  ylab('FDR')
+# Saving 13.3 x 5.26 in image
+ggsave('../img/3_3_1_1_1.pdf', width = 12.7, height = 5.76)
 
 fdr_nde_plot(de_bench, TRUE) +
   #theme_bw(25) +
