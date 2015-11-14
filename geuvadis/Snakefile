@@ -36,7 +36,9 @@ rule all:
         expand('results/3_3_1_1_1/exp_1/counts.tsv'),
         expand('results/3_3_1_1_2/exp_1/{idx}/starAligned.sortedByCoord.out.bam', idx = range(1, 7)),
         expand('results/3_3_1_1_2/exp_1/{idx}/featureCounts.txt', idx = range(1, 7)),
-        expand('results/3_3_1_1_2/exp_1/counts.tsv')
+        expand('results/3_3_1_1_2/exp_1/counts.tsv'),
+        'sims/gene_3_3_1_1_1_1/de_info.tsv.gz',
+
 
         #'results/prep_fin_lnorm.RData',
         # 'sims/3_3_1_1/de_info.tsv.gz',
@@ -73,6 +75,21 @@ rule prep_finnish_samples:
 #         'results/prep_fin_lnorm.RData'
 #     shell:
 #         source_r('R', 'mean_var_lnorm_pairs.R')
+rule gen_sim_script_gene:
+    input:
+        'results/prep_fin.RData'
+    output:
+        'sims/gene_{n_a,\d+}_{n_b}_{n_sim}_{seed,\d+}_{sf,\d+}_{log_fc\d+}',
+        'sims/gene_{n_a,\d+}_{n_b}_{n_sim}_{seed}_{sf}_{log_fc}/de_info.tsv.gz'
+    shell:
+        source_r('R', 'gen_sim_genes.R') + ' '
+        '{wildcards.n_a}_{wildcards.n_b}_{wildcards.n_sim}_{wildcards.seed}_{wildcards.sf} '
+        '{wildcards.n_sim} '
+        '{wildcards.n_a} '
+        '{wildcards.n_b} '
+        '{wildcards.seed} '
+        '{wildcards.sf} '
+        '{wildcards.log_fc} '
 
 rule gen_sim_script:
     input:

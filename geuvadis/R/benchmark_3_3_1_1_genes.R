@@ -1,3 +1,5 @@
+devtools::document('~/dev/sleuth')
+devtools::install('~/dev/sleuth')
 library("cowplot")
 library("sleuth")
 library("mamabear")
@@ -32,7 +34,8 @@ t2g <- biomaRt::getBM(attributes = c("ensembl_transcript_id", "ensembl_gene_id",
 t2g <- dplyr::rename(t2g, target_id = ensembl_transcript_id,
   ens_gene = ensembl_gene_id, ext_gene = external_gene_name)
 
-so <- sleuth_prep(s2c, ~ condition, norm_fun_counts = all_ones, max_bootstrap = 30)
+so <- sleuth_prep(s2c, ~ condition, norm_fun_counts = all_ones, max_bootstrap = 30,
+  target_mapping = t2g)
 # so <- sleuth_prep(s2c, ~ condition, norm_fun_counts = all_ones, min_prop = 0.5, min_reads = 10)
 
 so <- sleuth_fit(so)
@@ -57,6 +60,9 @@ save(s_ratio, t2g, de_info, file = 'gene_data.RData')
 ################################################################################
 load('gene_data.RData')
 
+
+debugonce(sleuth_gene_table)
+gene_table <- sleuth_gene_table(so, 'reduced:full')
 de_genes <- inner_join(de_info, t2g, by = 'target_id')
 de_genes <- de_genes %>%
   group_by(ens_gene) %>%
@@ -162,3 +168,7 @@ fdr_nde_plot(de_bench, FALSE) +
   theme(legend.position = c(0.1, 0.80))+
   xlab('number of genes called DE') +
   ylab('FDR')
+
+
+samples <- truncated_normal(1000, 0.5)
+all(abs(samples) >= 0.5)
