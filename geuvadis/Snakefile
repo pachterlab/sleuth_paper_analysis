@@ -36,7 +36,8 @@ rule all:
         expand('results/3_3_1_1_1/exp_1/counts.tsv'),
         expand('results/3_3_1_1_2/exp_1/{idx}/starAligned.sortedByCoord.out.bam', idx = range(1, 7)),
         expand('results/3_3_1_1_2/exp_1/{idx}/featureCounts.txt', idx = range(1, 7)),
-        expand('results/3_3_1_1_2/exp_1/counts.tsv')
+        expand('results/3_3_1_1_2/exp_1/counts.tsv'),
+        expand('results/3_3_1_1_1/exp_1/cuffdiff/isoforms.fpkm_tracking')
 
         #'results/prep_fin_lnorm.RData',
         # 'sims/3_3_1_1/de_info.tsv.gz',
@@ -255,6 +256,7 @@ rule star_index:
         'STAR '
         '--runThreadN 20 '
         '--runMode genomeGenerate '
+        '--outSAMstrandField intronMotif '
         '--genomeDir index/star '
         '--genomeFastaFiles {GENOME} '
         '--sjdbGTFfile {GTF} '
@@ -278,6 +280,41 @@ rule star:
         '--readFilesCommand zcat '
         '--outFileNamePrefix {params.base} '
         '--outSAMtype BAM SortedByCoordinate '
+
+def cuffdiff_input(path, n_a, n_b):
+    a_str = []
+    b_str = []
+    # print(n_a, type(n_a), int(n_a))
+    n_a = int(n_a)
+    n_b = int(n_b)
+    print(type(path), path)
+    # print(n_b, type(n_b))
+    for i in range(1, n_a + 1):
+        cur = path + '/' + str(i) + '/starAligned.sortedByCoord.out.bam'
+        a_str.append(path + '/' + str(i) + '/starAligned.sortedByCoord.out.bam')
+    for i in range(n_a + 1, n_a + n_b + 1):
+        b_str.append(path + '/' + str(i) + '/starAligned.sortedByCoord.out.bam')
+    # print(a_str)
+    a_str = ','.join(a_str)
+    b_str = ','.join(b_str)
+
+    return a_str + ' ' + b_str
+
+rule cuffdiff:
+    # input:
+    #     expand('results/{n_a}_{n_b}_{n_sim}_{seed}_{sf}/exp_{num}/{id}/starAligned.sortedByCoord.out.bam', id = range(1, 7))
+    output:
+        base = 'results/{n_a}_{n_b}_{n_sim}_{seed}_{sf}/exp_{num}/',
+        result = 'results/{n_a}_{n_b}_{n_sim}_{seed}_{sf}/exp_{num}/cuffdiff/isoforms.fpkm_tracking'
+    threads: N_THREADS
+    run:
+        cmd = 'cuffdiff ' + '{GTF} ' +\
+            ' -p {threads} ' +\
+            cuffdiff_input(output.base, wildcards.n_a, wildcards.n_b)
+        print(cmd)
+        shell(cmd)
+
+
 
 rule featureCounts:
     input:
