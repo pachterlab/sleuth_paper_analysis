@@ -44,7 +44,7 @@ prep_dds_sim <- function(dds, min_mean = 5, min_dispersion = 1e-6) {
   fit[order(fit$target_id),]
 }
 
-#' @param sim_df a data.frame which contains columns baseMean, disp_final#'
+#' @param sim_df a data.frame which contains columns baseMean, disp_final
 #' @param X the design matrix
 #' @param size_factors the scaling of each sample
 #' @return a matrix of integer counts
@@ -131,7 +131,8 @@ simulate_gene_counts <- function(prep_df,
   log_fc = 1,
   log_fc_sd = NA,
   sim_function = make_sim,
-  size_factors = rep(1, n_a + n_b)
+  size_factors = rep(1, n_a + n_b),
+  generate_fold_changes = gene_fold_change
   ) {
   stopifnot( is(prep_df, "data.frame") )
 
@@ -160,10 +161,20 @@ simulate_gene_counts <- function(prep_df,
   data.table::setnames(which_de, "gene_name", gene_label)
 
   prep_df <- dplyr::left_join(prep_df, which_de, by = gene_label)
+  # prep_df <- dplyr::mutate(prep_df,
+  #   log_fc = ifelse(is.na(log_fc), 0, log_fc),
+  #   is_de = ifelse(is.na(is_de), FALSE, is_de)
+  # )
   prep_df <- dplyr::mutate(prep_df,
-    log_fc = ifelse(is.na(log_fc), 0, log_fc),
     is_de = ifelse(is.na(is_de), FALSE, is_de)
   )
+
+  # instead of complicating our lives with another join, generate fold changes for everything
+  prep_df <- generate_fold_changes(prep_df)
+
+  # clean out the old fold changes
+  prep_df <- dplyr::mutate(prep_df,
+    log_fc = ifelse(is_de, log_fc, 0))
 
   sim <- lapply(1:n_sim,
     function(i) {
@@ -179,6 +190,31 @@ simulate_gene_counts <- function(prep_df,
 }
 # debugonce(simulate_counts)
 # debugonce(make_sim)
+
+gene_fold_change <- function(df) {
+  df <- group_by(df, ens_gene)
+  mutate(df, log_fc = gene_fold_change_same_direction(length(ens_gene)))
+}
+
+#' Generate gene fold counts in the same direction
+#'
+#' This function takes a number of transcripts and generates log fold changes in the same direction
+#' @param n_transcripts the number of transcripts at this locus
+#' @param direction the direction/scaling to use. If `NULL`, then a random direction will be chosen (-1, 1)
+#' @param min_magnitude the minimum magnitude to truncate the normal distribution
+#' @return generate \code{n_transcripts} samples using \code{truncated_normal}
+gene_fold_change_same_direction <- function(n_transcripts, direction = NULL,
+  min_magnitude = log(1.5)) {
+
+  if (is.null(direction)) {
+    direction <- sample(c(-1, 1), 1)
+  }
+
+  s <- truncated_normal(n_transcripts, min_magnitude)
+  s <- abs(s) * direction
+
+  s
+}
 
 #' simulate from a truncated normal
 #'
