@@ -15,13 +15,13 @@ sf_type <- as.integer(args[6])
 log_fc <- as.integer(args[7])
 
 # temporary
-sim_name <- 'tmp'
-n_sim <- 1L
-n_a <- 3L
-n_b <- 3L
-seed <- 1
-sf_type <- 2
-log_fc <- 1
+# sim_name <- 'tmp'
+# n_sim <- 1L
+# n_a <- 3L
+# n_b <- 3L
+# seed <- 1
+# sf_type <- 2
+# log_fc <- 1
 # end temporary
 
 n_total <- n_a + n_b
