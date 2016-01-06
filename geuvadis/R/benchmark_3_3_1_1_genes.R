@@ -1,8 +1,10 @@
+# nolint start
 devtools::document('~/dev/sleuth')
 devtools::install('~/dev/sleuth')
 library("cowplot")
 library("sleuth")
 library("mamabear")
+# nolint end
 
 all_ones <- function(x) {
   p <- ncol(x)
@@ -166,7 +168,7 @@ fdr_nde_plot(de_bench, FALSE) +
   # xlim(0, 2000) +
   xlim(0, 4000) +
   ylim(0, 0.10) +
-  theme(legend.position = c(0.1, 0.80))+
+  theme(legend.position = c(0.1, 0.80)) +
   xlab('number of genes called DE') +
   ylab('FDR')
 

@@ -27,7 +27,7 @@ prep_dds_sim <- function(dds, min_mean = 5, min_dispersion = 1e-6) {
   # for dispersion estimates that are hard to estimate (due to low counts),
   # simply use a fixed estimate based on those which pass the filter
   med_dispersion <- fit %>%
-    filter(disp_filt) %>%
+    dplyr::filter(disp_filt) %>%
     .$dispGeneEst %>%
     median
 
@@ -146,7 +146,7 @@ simulate_gene_counts <- function(prep_df,
   prep_df <- left_join(prep_df, genes_pass_filter, by = gene_label)
 
   # "gene_names" refers to the genes that pass the filter
-  gene_names <- filter(prep_df, gene_filter)[[gene_label]] %>% unique
+  gene_names <- dplyr::filter(prep_df, gene_filter)[[gene_label]] %>% unique
   n_genes <- length(gene_names)
   n_de <- ceiling(prop_de * n_genes)
 

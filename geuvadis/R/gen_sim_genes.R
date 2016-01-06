@@ -35,7 +35,7 @@ sf_mode_2 <- function(n) {
   res <- numeric(n)
 
   while (nsamp < n) {
-    if ((n - nsamp) == 1) {
+    if ( (n - nsamp) == 1 ) {
       nsamp <- nsamp + 1
       res[nsamp] <- 1
     } else {
@@ -45,7 +45,7 @@ sf_mode_2 <- function(n) {
         res[nsamp] <- 1
       } else {
         nsamp <- nsamp + 1
-        res[nsamp] <- 1/3
+        res[nsamp] <- 1 / 3
         nsamp <- nsamp + 1
         res[nsamp] <- 3
       }
@@ -74,17 +74,19 @@ cat("Generating counts\n")
 # debugonce(simulate_counts)
 #
 # debugonce(make_sim)
-# mart <- biomaRt::useMart(biomart = "ENSEMBL_MART_ENSEMBL", dataset = "hsapiens_gene_ensembl",
-#   host="www.ensembl.org")
-# ttg <- biomaRt::getBM(attributes = c("ensembl_transcript_id", "ensembl_gene_id",
-#     "external_gene_name"), mart = mart)
-ttg <- readRDS('~/ttg.rds')
+mart <- biomaRt::useMart(biomart = "ENSEMBL_MART_ENSEMBL",
+  dataset = "hsapiens_gene_ensembl",
+  host="www.ensembl.org")
+ttg <- biomaRt::getBM(attributes = c("ensembl_transcript_id", "ensembl_gene_id",
+    "external_gene_name"), mart = mart)
+# ttg <- readRDS('~/ttg.rds')
 
 # rename the columns: ensure we have 'target_id' and also make the others a bit
 # shorter
 ttg <- dplyr::rename(ttg, target_id = ensembl_transcript_id,
   ens_gene = ensembl_gene_id, ext_gene = external_gene_name)
 
+# debugonce(simulate_gene_counts)
 sim <- simulate_gene_counts(prep_fin,
   target_mapping = ttg,
   gene_label = "ens_gene",
