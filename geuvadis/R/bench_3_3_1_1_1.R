@@ -98,7 +98,10 @@ limma_res <- limma_res %>%
 # edgeR
 ################################################################################
 
-dge <- edgeR::DGEList(counts = obs_raw_filt, group = s2c$condition)
+er_filter <- apply(obs_raw, 1, basic_filter, min_reads = 15, min_prop = 0.51)
+
+dge <- edgeR::DGEList(counts = obs_raw[er_filter, ], group = s2c$condition)
+dge <- edgeR::calcNormFactors(dge)
 y <- edgeR::estimateCommonDisp(dge)
 y <- edgeR::estimateTagwiseDisp(y)
 et <- edgeR::exactTest(y)
