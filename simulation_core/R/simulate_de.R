@@ -1,4 +1,4 @@
-suppressWarnings(suppressMessages( library("dplyr") ))
+suppressWarnings(suppressMessages(library("dplyr")))
 
 #' Prepare a DESeqDataSet for simulation
 #'
@@ -238,6 +238,7 @@ truncated_normal <- function(n, min_magnitude, ...) {
 
   samples
 }
+
 
 # let's get the deepest sample from female Finns to use as our RSEM example for
 # effective lengths and lengths.

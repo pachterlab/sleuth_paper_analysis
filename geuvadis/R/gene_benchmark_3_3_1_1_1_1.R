@@ -2,13 +2,6 @@ library("cowplot")
 library("sleuth")
 library("mamabear")
 
-all_ones <- function(x) {
-  p <- ncol(x)
-  sf <- rep.int(1, p)
-  names(sf) <- colnames(x)
-
-  sf
-}
 
 sim_name <- 'gene_3_3_1_1_1_1'
 sims_dir <- file.path('../sims', sim_name)
@@ -30,14 +23,15 @@ s2c <- data.frame(sample = paste0("sample_", 1:6),
   condition = rep(c("A", "B"), each = 3), stringsAsFactors = FALSE)
 s2c <- dplyr::mutate(s2c, path = kal_dirs)
 
-mart <- biomaRt::useMart(biomart = "ENSEMBL_MART_ENSEMBL", dataset = "hsapiens_gene_ensembl",
+mart <- biomaRt::useMart(biomart = "ENSEMBL_MART_ENSEMBL",
+  dataset = "hsapiens_gene_ensembl",
   host="www.ensembl.org")
 t2g <- biomaRt::getBM(attributes = c("ensembl_transcript_id", "ensembl_gene_id",
     "external_gene_name"), mart = mart)
 t2g <- dplyr::rename(t2g, target_id = ensembl_transcript_id,
   ens_gene = ensembl_gene_id, ext_gene = external_gene_name)
 
-min_reads <- 15
+min_reads <- 7
 # so <- sleuth_prep(s2c, ~ condition, max_bootstrap = 30,
 #   target_mapping = t2g, min_reads = min_reads, min_prop = 0.5)
 so <- sleuth_prep(s2c, ~ condition, norm_fun_counts = all_ones, max_bootstrap = 30,
@@ -96,6 +90,11 @@ colnames(counts) <- sub('X', '', colnames(counts))
 
 genes_filter <- apply(counts, 1, basic_filter, min_reads = min_reads, min_prop = 0.5)
 counts_filtered <- counts[genes_filter, ]
+
+library("DESeq2")
+debugonce(runDESeq2)
+
+tmp <- runDESeq2(counts_filtered)
 
 ################################################################################
 # TEMPORARY: use the true counts for the gene counting programs

@@ -30,7 +30,9 @@ s2c <- dplyr::mutate(s2c, path = kal_dirs)
 
 ################################################################################
 
-mart <- biomaRt::useMart(biomart = "ensembl", dataset = "hsapiens_gene_ensembl")
+mart <- biomaRt::useMart(biomart = "ENSEMBL_MART_ENSEMBL",
+  dataset = "hsapiens_gene_ensembl",
+  host="www.ensembl.org")
 t2g <- biomaRt::getBM(attributes = c("ensembl_transcript_id", "ensembl_gene_id",
     "external_gene_name"), mart = mart)
 t2g <- dplyr::rename(t2g, target_id = ensembl_transcript_id,
@@ -60,6 +62,11 @@ s_ratio <- sleuth_results(so, 'reduced:full', test_type = 'lrt')
 save(s_ratio, t2g, de_info, file = 'gene_data.RData')
 
 ################################################################################
+
+sp <- run_sleuth_prep(s2c)
+swt <- run_sleuth_wt(sp)
+
+################################################################################
 load('gene_data.RData')
 
 
@@ -83,6 +90,19 @@ colnames(counts) <- sub('X', '', colnames(counts))
 
 genes_filter <- apply(counts, 1, basic_filter)
 counts_filtered <- counts[genes_filter, ]
+
+es <- make_count_data_set(counts_filtered, s2c)
+
+debugonce(runDESeq2)
+res <- runDESeq2(es)
+res_2 <- runDESeq2Outliers(es)
+
+debugonce(runEdgeR)
+edgeR_result <- runEdgeRRobust(es)
+
+limma_results <- runVoom(es)
+tmp <- runEBSeq(es)
+
 
 ################################################################################
 # DESeq
