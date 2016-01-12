@@ -40,11 +40,17 @@ rule all:
         expand('results/3_3_1_1_2/exp_1/counts.tsv'),
         # expand('results/3_3_1_1_1/exp_1/cuffdiff/isoforms.fpkm_tracking'),
         'sims/gene_3_3_1_1_1_1/de_info.tsv.gz',
-        expand('sims/gene_3_3_1_1_1_1/exp_1/{id}/sim_{id}_1.fq.gz', id = range(1, 7)),
-        expand('results/gene_3_3_1_1_1_1/exp_1/{idx}/kallisto/abundance.h5',
-           idx = range(1, 7)),
-        expand('results/gene_3_3_1_1_1_1/exp_1/{idx}/featureCounts.txt', idx = range(1, 7)),
-        expand('results/gene_3_3_1_1_1_1/exp_1/counts.tsv')
+        # expand('sims/gene_3_3_1_1_1_1/exp_1/{id}/sim_{id}_1.fq.gz', id = range(1, 7)),
+        # expand('results/gene_3_3_1_1_1_1/exp_1/{idx}/kallisto/abundance.h5',
+        #    idx = range(1, 7)),
+        # expand('results/gene_3_3_1_1_1_1/exp_1/{idx}/featureCounts.txt', idx = range(1, 7)),
+        # expand('results/gene_3_3_1_1_1_1/exp_1/counts.tsv'),
+        'sims/gene_diff_fc_3_3_1_1_1_1/de_info.tsv.gz',
+        expand('sims/gene_diff_fc_3_3_1_1_1_1/exp_1/{id}/sim_{id}_1.fq.gz', id = range(1, 7)),
+        expand('results/gene_diff_fc_3_3_1_1_1_1/exp_1/{idx}/kallisto/abundance.h5',
+            idx = range(1, 7)),
+        expand('results/gene_diff_fc_3_3_1_1_1_1/exp_1/{idx}/featureCounts.txt', idx = range(1, 7)),
+        expand('results/gene_diff_fc_3_3_1_1_1_1/exp_1/counts.tsv')
 
 
         #'results/prep_fin_lnorm.RData',
@@ -86,11 +92,11 @@ rule gen_sim_script_gene:
     input:
         'results/prep_fin.RData'
     output:
-        'sims/gene_{n_a,\d+}_{n_b}_{n_sim}_{seed,\d+}_{sf,\d+}_{log_fc,\d+}',
-        'sims/gene_{n_a,\d+}_{n_b}_{n_sim}_{seed}_{sf,\d+}_{log_fc}/de_info.tsv.gz'
+        'sims/gene_diff_fc_{n_a,\d+}_{n_b}_{n_sim}_{seed,\d+}_{sf,\d+}_{log_fc,\d+}',
+        'sims/gene_diff_fc_{n_a,\d+}_{n_b}_{n_sim}_{seed}_{sf,\d+}_{log_fc}/de_info.tsv.gz'
     shell:
         source_r('R', 'gen_sim_genes.R') + ' '
-        'gene_{wildcards.n_a}_{wildcards.n_b}_{wildcards.n_sim}_{wildcards.seed}_{wildcards.sf}_{wildcards.log_fc} '
+        'gene_diff_fc_{wildcards.n_a}_{wildcards.n_b}_{wildcards.n_sim}_{wildcards.seed}_{wildcards.sf}_{wildcards.log_fc} '
         '{wildcards.n_sim} '
         '{wildcards.n_a} '
         '{wildcards.n_b} '
