@@ -94,7 +94,8 @@ get_gene_lift <- function(obj, ...) {
     result <- .[min_index, ]
     result <- dplyr::select(result, -target_id)
     result <- dplyr::rename(result, target_id = ens_gene)
-    dplyr::select(result, target_id, pval, qval)
+    # dplyr::select(result, target_id, pval, qval)
+    result
   })
 }
 
@@ -116,7 +117,7 @@ runDESeq2 <- function(e, as_gene = TRUE) {
   pvals <- res$pvalue
   padj <- res$padj
   pvals[is.na(pvals)] <- 1
-  pvals[rowSums(exprs(e)) == 0] <- NA
+  # pvals[rowSums(exprs(e)) == 0] <- NA
   padj[is.na(padj)] <- 1
 
   rename_target_id(
@@ -138,7 +139,7 @@ runEdgeR <- function(e, as_gene = TRUE) {
   predbeta <- predFC(exprs(e), design, offset=getOffset(dgel), dispersion=dgel$tagwise.dispersion)
   predbeta10 <- predFC(exprs(e), design, prior.count=10, offset=getOffset(dgel), dispersion=dgel$tagwise.dispersion)
   pvals <- edger.lrt$table$PValue
-  pvals[rowSums(exprs(e)) == 0] <- NA
+  # pvals[rowSums(exprs(e)) == 0] <- NA
   padj <- p.adjust(pvals,method="BH")
   padj[is.na(padj)] <- 1
 
@@ -189,12 +190,12 @@ runVoom <- function(e, as_gene = TRUE) {
   fit <- eBayes(fit)
   tt <- topTable(fit,coef=ncol(design),n=nrow(dgel),sort.by="none")
   pvals <- tt$P.Value
-  pvals[rowSums(exprs(e)) == 0] <- NA
+  # pvals[rowSums(exprs(e)) == 0] <- NA
   padj <- p.adjust(pvals,method="BH")
   padj[is.na(padj)] <- 1
 
   rename_target_id(data.frame(target_id = rownames(tt),
-    pvals = pvals,
+    pval = pvals,
     qval = padj,
     beta = tt$logFC,
     stringsAsFactors = FALSE),
