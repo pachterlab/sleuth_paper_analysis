@@ -14,12 +14,12 @@ seed <- as.integer(args[5])
 sf_type <- as.integer(args[6])
 
 # tests go here
-sim_name <- 'mySimulation'
-n_sim <- 1
-n_a <- 3
-n_b <- 3
-seed <- 42
-sf_type <- 1
+# sim_name <- 'mySimulation'
+# n_sim <- 1
+# n_a <- 3
+# n_b <- 3
+# seed <- 42
+# sf_type <- 1
 
 n_total <- n_a + n_b
 
