@@ -13,6 +13,14 @@ n_b <- as.integer(args[4])
 seed <- as.integer(args[5])
 sf_type <- as.integer(args[6])
 
+# tests go here
+sim_name <- 'mySimulation'
+n_sim <- 1
+n_a <- 3
+n_b <- 3
+seed <- 42
+sf_type <- 1
+
 n_total <- n_a + n_b
 
 sf_mode_1 <- function(n) {
@@ -24,7 +32,7 @@ sf_mode_2 <- function(n) {
   res <- numeric(n)
 
   while (nsamp < n) {
-    if ((n - nsamp) == 1) {
+    if ( (n - nsamp) == 1 ) {
       nsamp <- nsamp + 1
       res[nsamp] <- 1
     } else {
@@ -34,7 +42,7 @@ sf_mode_2 <- function(n) {
         res[nsamp] <- 1
       } else {
         nsamp <- nsamp + 1
-        res[nsamp] <- 1/3
+        res[nsamp] <- 1 / 3
         nsamp <- nsamp + 1
         res[nsamp] <- 3
       }
@@ -61,7 +69,7 @@ load("../results/prep_fin.RData", verbose = TRUE)
 
 cat("Generating counts\n")
 # debugonce(simulate_counts)
-# 
+#
 # debugonce(make_sim)
 
 sim <- simulate_counts(prep_fin,
@@ -71,7 +79,9 @@ sim <- simulate_counts(prep_fin,
   prop_de = 0.20,
   seed = seed,
   log_fc_sd = 1,
-  size_factors = sfs)
+  size_factors = sfs,
+  constant_fc = NULL
+  )
 message(paste0('Size factors: ', sfs))
 
 rsem_fhandle <- gzfile("../results/rsem/HG00365_7/out.isoforms.results.gz", open = "r")

@@ -65,7 +65,10 @@ make_sim <- function(sim_df, X, size_factors = rep(1, nrow(X))) {
 #' Simulate counts from a negative binomial
 #'
 #' Simulate counts from a negative binomial using a data.frame prepared from
-#' prep_dds_sim
+#' prep_dds_sim. This model assumes that everything is independent.
+#'
+#' Counts are generated from a truncated normal such that the minimum fold change
+#' is a reasonable amount
 #'
 #' @param prep_df result from running \code{prep_dds_sim}
 #' @param n_sim the number of simulations to draw from this particular (random)
@@ -75,12 +78,25 @@ make_sim <- function(sim_df, X, size_factors = rep(1, nrow(X))) {
 #' @param prop_de proportion of targets to be differentially expressed
 #' @param seed an integer seed
 #' @param log_fc_sd the standard deviation to use for the log fold change
+#' @param constant_fc if not \code{NULL}, every differentially expressed
+#' transcript will have this fold change
+#' @param sim_function the functions used to generate the simulation
+#' @param min_magnitude the minimum magnitude for the truncated normal
 #' @return a named list with components (1) counts a list of matrices with
 #' counts, (2) prep_df - a data.frame with information about the differential
 #' expression, (3) condition a factor vector indicating the condition for each
 #' sample
-simulate_counts <- function(prep_df, n_sim = 1, n_a = 3L, n_b = 3L, prop_de = 0.2,
-  seed = 37L, log_fc_sd = 1, sim_function = make_sim, size_factors = rep(1, n_a + n_b)) {
+simulate_counts <- function(prep_df,
+  n_sim = 1,
+  n_a = 3L,
+  n_b = 3L,
+  prop_de = 0.2,
+  seed = 37L,
+  log_fc_sd = 1,
+  constant_fc = NULL,
+  sim_function = make_sim,
+  size_factors = rep(1, n_a + n_b),
+  min_magnitude = log(1.5)) {
   stopifnot( is(prep_df, "data.frame") )
 
   set.seed(seed)
@@ -102,7 +118,13 @@ simulate_counts <- function(prep_df, n_sim = 1, n_a = 3L, n_b = 3L, prop_de = 0.
   prep_df$is_de[row_idx_de] <- TRUE
 
   # assign log fold change using a normal centered at zero
-  log_fc <- rnorm(n_de, mean = 0, sd = log_fc_sd)
+  # log_fc <- rnorm(n_de, mean = 0, sd = log_fc_sd)
+  log_fc <- NULL
+  if (is.null(constant_fc)) {
+    log_fc <- truncated_normal(n_de, min_magnitude = min_magnitude, sd = log_fc_sd)
+  } else {
+    log_fc <- rep.int(constant_fc, n_de)
+  }
   prep_df <- prep_df %>%
     mutate(log_fc = 0)
   prep_df$log_fc[row_idx_de] <- log_fc
@@ -193,7 +215,7 @@ simulate_gene_counts <- function(prep_df,
 
 gene_fold_change <- function(df) {
   df <- group_by(df, ens_gene)
-  mutate(df, log_fc = gene_fold_change_same_direction(length(ens_gene)))
+  mutate(df, log_fc = gfc_same_direction(length(ens_gene)))
 }
 
 #' Generate gene fold counts in the same direction
@@ -203,7 +225,7 @@ gene_fold_change <- function(df) {
 #' @param direction the direction/scaling to use. If `NULL`, then a random direction will be chosen (-1, 1)
 #' @param min_magnitude the minimum magnitude to truncate the normal distribution
 #' @return generate \code{n_transcripts} samples using \code{truncated_normal}
-gene_fold_change_same_direction <- function(n_transcripts, direction = NULL,
+gfc_same_direction <- function(n_transcripts, direction = NULL,
   min_magnitude = log(1.5)) {
 
   if (is.null(direction)) {
@@ -216,6 +238,15 @@ gene_fold_change_same_direction <- function(n_transcripts, direction = NULL,
   s
 }
 
+# gfc_single_transcript <- function(n_transcripts, direction = NULL,
+#   min_magnitude = log(1.5)) {
+#
+#   if (is.null(direction)) {
+#     direction <- sample(c(-1, 1), 1)
+#   }
+#
+#   s <-
+# }
 #' simulate from a truncated normal
 #'
 #' simulate from a truncated normal which is missing the center part of the mass.
