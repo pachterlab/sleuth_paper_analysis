@@ -28,6 +28,7 @@ counts_filtered <- counts[genes_filter, ]
 gene_cds <- make_count_data_set(counts_filtered, sample_to_condition)
 
 sum(genes_filter)
+
 ###
 # run the methods
 ###

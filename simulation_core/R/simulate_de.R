@@ -124,6 +124,7 @@ simulate_counts <- function(prep_df,
     log_fc <- truncated_normal(n_de, min_magnitude = min_magnitude, sd = log_fc_sd)
   } else {
     log_fc <- rep.int(constant_fc, n_de)
+    log_fc <- sample(c(-1, 1), n_de, replace = TRUE) * log_fc
   }
   prep_df <- prep_df %>%
     mutate(log_fc = 0)

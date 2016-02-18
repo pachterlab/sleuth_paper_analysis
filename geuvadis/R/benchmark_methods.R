@@ -16,6 +16,30 @@ get_human_gene_names <- function() {
   ttg
 }
 
+transcript_gene_mapping <- get_human_gene_names()
+
+#' generate `sample_to_condition` that sleuth is expecting
+#'
+#' @param n_a the number of samples in condition A
+#' @param n_a the number of samples in condition B
+#' @param kal_dirs if not NULL, then add the appropriate `path` column
+#' @return a \code{data.frame} in the proper sleuth form
+get_sample_to_condition <- function(n_a, n_b, kal_dirs = NULL) {
+  n <- n_a + n_b
+
+  sample_to_condition <- data.frame(
+    sample = paste0("sample_", 1:n),
+    condition = factor(c(rep("A", n_a), rep("B", n_b))),
+    stringsAsFactors = FALSE)
+
+  if (!is.null(kal_dirs)) {
+    sample_to_condition <- dplyr::mutate(sample_to_condition, path = kal_dirs)
+  }
+  rownames(sample_to_condition) <- sample_to_condition$sample
+
+  sample_to_condition
+}
+
 #' Generate equal size factors
 #'
 #' Generate size factors all equal to 1. Helpful for simulations.
@@ -38,7 +62,6 @@ make_count_data_set <- function(counts, sample_info) {
   ExpressionSet(counts, AnnotatedDataFrame(sample_info))
 }
 
-transcript_gene_mapping <- get_human_gene_names()
 
 run_sleuth_prep <- function(sample_info, max_bootstrap = 30, ...) {
   so <- sleuth_prep(sample_info, ~ condition, max_bootstrap = max_bootstrap,
@@ -62,25 +85,44 @@ run_sleuth_prep <- function(sample_info, max_bootstrap = 30, ...) {
 #     c('target_id', 'pval', 'qval')]
 # }
 #
-run_sleuth <- function(sample_info, max_bootstrap = 30, lift_genes = FALSE, ...) {
+
+#' @param gene_mode if NULL, do isoform mode, if 'lift' do gene lifting, if 'aggregate', do gene aggregation
+run_sleuth <- function(sample_info, max_bootstrap = 30, gene_mode = NULL, ...) {
   so <- run_sleuth_prep(sample_info, max_bootstrap = max_bootstrap, ...)
   so <- sleuth_wt(so, 'conditionB')
   so <- sleuth_fit(so, ~ 1, 'reduced')
   so <- sleuth_lrt(so, 'reduced', 'full')
 
   res <- NULL
-  if (lift_genes) {
+  if (is.null(gene_mode)) {
+    # test every isoform
     lrt <- get_gene_lift(so, 'reduced:full', test_type = 'lrt')
     wt <- get_gene_lift(so, 'conditionB', test_type = 'wt')
     res <- list(sleuth.lrt = lrt, sleuth.wt = wt)
-  } else {
+  } else if (gene_mode == 'lift') {
     lrt <- sleuth_results(so, 'reduced:full', test_type = 'lrt')[,
       c('target_id', 'pval', 'qval')]
     wt <- sleuth_results(so, 'conditionB')[, c('target_id', 'pval', 'qval')]
     res <- list(sleuth.lrt = lrt, sleuth.wt = wt)
+  } else if (gene_mode == 'aggregate') {
+    stop('TODO: implement me!')
+  } else {
+    stop('Unrecognized mode for "run_sleuth"')
   }
 
+  res$so <- so
+
   res
+}
+
+get_filtered_isoform_cds <- function(so, stc) {
+  pass_filt_names <- so$filter_df[['target_id']]
+
+  obs_raw <- sleuth:::spread_abundance_by(so$obs_raw, "est_counts")
+  counts_filtered <- obs_raw[pass_filt_names,]
+  isoform_cds <- make_count_data_set(round(counts_filtered), stc)
+
+  isoform_cds
 }
 
 #' @param obj a sleuth object
