@@ -1,0 +1,31 @@
+include: '../config.py'
+
+rule all:
+    input:
+        TRANSCRIPTOME_FA,
+        TRANSCRIPTOME_GTF,
+        GENOME_FA
+
+rule get_transcriptome:
+    output:
+        TRANSCRIPTOME_FA
+    shell:
+        'curl -o {output}'
+        ' --silent'
+        ' ftp://ftp.ensembl.org/pub/release-80/fasta/homo_sapiens/cdna/Homo_sapiens.GRCh38.cdna.all.fa.gz'
+
+rule get_genome:
+    output:
+        GENOME_FA
+    shell:
+        'curl -o {output}'
+        ' --silent'
+        ' ftp://ftp.ensembl.org/pub/release-80/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz'
+
+rule get_gtf:
+    output:
+        TRANSCRIPTOME_GTF
+    shell:
+        'curl -o {output}'
+        ' --silent'
+        ' ftp://ftp.ensembl.org/pub/release-80/gtf/homo_sapiens/Homo_sapiens.GRCh38.80.gtf.gz'

@@ -3,7 +3,16 @@
 .RData*
 *.snakemake
 
+*.gtf*
+*.fa*
+*.RData
+
+annotation/
 orig_sim/
+software/
+
+*_files/
+*_cache/
 
 geuvadis/results
 geuvadis/sims
