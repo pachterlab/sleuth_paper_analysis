@@ -1,3 +1,5 @@
+include: '../config.py'
+
 N_THREADS = 35
 
 ANNO = "../annotation"
@@ -14,10 +16,6 @@ GTF = ANNO + '/Homo_sapiens.GRCh38.80.gtf'
 
 GENOME = '/home/hjp/kallisto_paper_analysis/GRCh38_80/Homo_sapiens.GRCh38.dna.primary_assembly.fa'
 
-def source_r(base, fname):
-    return 'Rscript --vanilla --default-packages=methods,stats,utils -e \'setwd("{0}")\' -e \'source("{1}")\''.format(base, fname)
-
-KALLISTO = '/home/hjp/dev_versions/kallisto_elen'
 KAL_IDX = '../index/Homo_sapiens.GRCh38.rel80.cdna.all.kidx'
 
 rule all:
@@ -50,7 +48,14 @@ rule all:
         expand('results/gene_diff_fc_3_3_1_1_1_1/exp_1/{idx}/kallisto/abundance.h5',
             idx = range(1, 7)),
         expand('results/gene_diff_fc_3_3_1_1_1_1/exp_1/{idx}/featureCounts.txt', idx = range(1, 7)),
-        expand('results/gene_diff_fc_3_3_1_1_1_1/exp_1/counts.tsv')
+        expand('results/gene_diff_fc_3_3_1_1_1_1/exp_1/counts.tsv'),
+
+        'sims/isoform_3_3_1_1_1/de_info.tsv.gz',
+        expand('sims/isoform_3_3_1_1_1/exp_1/{id}/sim_{id}_1.fq.gz', id = range(1, 7)),
+        expand('results/isoform_3_3_1_1_1/exp_1/{idx}/kallisto/abundance.h5',
+            idx = range(1, 7)),
+        expand('results/isoform_3_3_1_1_1/exp_1/{idx}/featureCounts.txt', idx = range(1, 7)),
+        expand('results/isoform_3_3_1_1_1/exp_1/counts.tsv')
 
 
         #'results/prep_fin_lnorm.RData',
@@ -135,6 +140,25 @@ rule gen_sim_script:
         '{wildcards.n_b} '
         '{wildcards.seed} '
         '{wildcards.sf}'
+
+# the simulation deals with modeling independent differential usage amongst the isoforms
+# basically, every isoform is looked at independently and decides whether or not it will be
+# differentially expressed independently.
+rule gen_sim_script_isoform:
+    input:
+        'results/prep_fin.RData'
+    output:
+        'sims/isoform_{n_a,\d+}_{n_b}_{n_sim}_{seed,\d+}_{sf,\d+}',
+        'sims/isoform_{n_a,\d+}_{n_b}_{n_sim}_{seed}_{sf}/de_info.tsv.gz'
+    shell:
+        source_r('R', 'gen_sim.R') + ' '
+        'isoform_{wildcards.n_a}_{wildcards.n_b}_{wildcards.n_sim}_{wildcards.seed}_{wildcards.sf} '
+        '{wildcards.n_sim} '
+        '{wildcards.n_a} '
+        '{wildcards.n_b} '
+        '{wildcards.seed} '
+        '{wildcards.sf}'
+
 
 # rule make_sim:
 #     input:

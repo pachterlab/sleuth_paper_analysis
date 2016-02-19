@@ -1,0 +1,16 @@
+include: '../config.py'
+
+rule all:
+    input:
+        KALLISTO
+
+rule get_kallisto:
+    output:
+        KALLISTO
+    params:
+        url = 'https://github.com/pachterlab/kallisto/releases/download/v0.42.4/kallisto_linux-v0.42.4.tar.gz'
+    shell:
+        'wget -O kallisto_binary.tar.gz {params.url}; '
+        'tar -xf kallisto_binary.tar.gz; '
+        'rmdir kallisto_linux; ' # snakemake will automatically make this directory
+        'mv kallisto_linux-* kallisto_linux; '
