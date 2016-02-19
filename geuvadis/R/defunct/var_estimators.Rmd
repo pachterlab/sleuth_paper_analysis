@@ -1,0 +1,390 @@
+---
+title: "Estimating variance under measurement error model"
+output:
+  html_document:
+    toc: true
+    fig_width: 14
+    fig_height: 10
+---
+
+# Load info
+
+```{r}
+library("cowplot")
+library("sleuth")
+
+base_dir <- "../results/3_3_1_1"
+```
+
+```{r,cache=TRUE}
+# de_info contains the 'true' fold change as well as which transcripts are DE
+de_info <- read.table(gzfile(file.path(base_dir, "de_info.tsv.gz")),
+  header = TRUE, stringsAsFactors = FALSE)
+```
+
+```{r}
+sobj_fname <- "../tmp/sobj.rds"
+sobj <- NULL
+{
+  if ( !file.exists(sobj_fname) ) {
+    kal_fnames <- file.path(base_dir, "sample_1", 1:6, "kallisto", "abundance.h5" )
+
+
+    kal <- lapply(kal_fnames, read_kallisto_h5, read_bootstrap = TRUE)
+
+    s2c <- data.frame(sample = paste0("sample_", 1:6),
+      condition = rep(c("A", "B"), each = 3), stringsAsFactors = FALSE)
+
+    sobj <- new_sleuth(kal, s2c, ~ condition)
+    rm(kal)
+    gc()
+
+    # let's treat it as we know the truth
+    sobj$obs_norm <- sobj$obs_raw
+    saveRDS(sobj, sobj_fname)
+  } else {
+    sobj <- readRDS(sobj_fname)
+  }
+}
+```
+
+```{r,cache=TRUE}
+pass_filt <- sobj$obs_norm %>%
+  group_by(target_id) %>%
+  summarise( count_filt = sum(est_counts > 5) > 0.8 * n())
+```
+
+Fit the pooled variance measurement error model
+
+```{r}
+mev <- NULL
+{
+  mev_fname <- "../tmp/mev.rds"
+  if( !file.exists(mev_fname) ){
+    mev <- me_equal_var(sobj, pass_filt, function(x) log(x + 0.5))
+    saveRDS( mev, mev_fname )
+  } else {
+    mev <- readRDS( mev_fname )
+  }
+}
+```
+
+Competing methods:
+```{r}
+deseq_res <- readRDS("../tmp/DESeq2.rds")
+limma_res <- readRDS("../tmp/limma.rds")
+edgeR_res <- readRDS("../tmp/edgeR.rds")
+```
+
+```{r}
+deg_free <- 4
+X <- sobj$design_matrix
+A <- solve( t(X) %*% X )
+```
+
+Get the betas into a data.frame
+
+```{r,cache=TRUE}
+b <- sapply(mev$mes,
+  function(x) {
+    x$ols_fit$coefficients[2]
+  })
+names(b) <- names(mev$mes)
+b <- data.frame(target_id = names(b), b = b)
+rownames(b) <- NULL
+```
+
+# Different variance estimators
+
+Let's add a column that is the "standard" OLS estimate of sigma (assuming no
+ME)
+
+```{r}
+mev$summary <- mutate(mev$summary, sigma_sq_ols = rss / deg_free)
+```
+
+## EDA
+
+Plot of technical variance vs OLS variance (RSS/(n-p)). In the ME model, the
+estimate of sigma is RSS/(n-p) - sigma\_q\_sq:
+
+```{r,cache=TRUE}
+ggplot(mev$summary, aes(log2(sigma_q_sq), log2(sigma_sq_ols))) +
+  stat_binhex(bins = 150) +
+  geom_abline(intercept = 0, slope = 1, colour = 'red')
+```
+
+How many things in the ME model will end up with sigma < 0?
+
+```{r}
+mev$summary %>%
+  group_by( sigma_sq <= 0 ) %>%
+  summarise(n = n())
+```
+
+How does the sleuth ME model change the variances (compared to OLS)?
+
+```{r,cache=TRUE}
+ggplot(mev$summary, aes(log2(smooth_sigma_sq_pmax + sigma_q_sq), log2(sigma_sq_ols))) +
+  stat_binhex(bins = 150) +
+  geom_abline(intercept = 0, slope = 1, colour = 'red')
+```
+
+What does the new smooth variance look like versus the technical variance?
+
+```{r,cache=TRUE}
+ggplot(mev$summary, aes(log2(smooth_sigma_sq_pmax + sigma_q_sq), log2(sigma_q_sq))) +
+  stat_binhex(bins = 150) +
+  geom_abline(intercept = 0, slope = 1, colour = 'red')
+```
+
+## Meta
+
+Function to compute t-statistic / p-values given a DF with the columns
+
+```{r}
+# assumes the A matrix is defined somewhere
+compute_test <- function(df, betas, bio_var_str, tech_var_str = NULL) {
+  stopifnot( nrow(df) == nrow(betas) )
+
+  betas <- mutate(betas, target_id = as.character(target_id))
+  df <- mutate(df, target_id = as.character(target_id))
+
+  df <- df[match(betas$target_id, df$target_id), ]
+  stopifnot( all.equal(df$target_id, betas$target_id) )
+
+  sigma <- df[[bio_var_str]]
+  if (!is.null(tech_var_str)) {
+    cat("Adding in technical var\n")
+    sigma <- sigma + df[[tech_var_str]]
+  }
+  se <- sqrt(sigma * A[2,2])
+  betas <- mutate(betas,
+    se_b = se,
+    t_stat = b / se_b,
+    pval = 2 * pt(abs(t_stat), deg_free, lower.tail = FALSE),
+    pval_wald = 2 * pnorm(abs(t_stat), lower.tail = FALSE)
+    )
+  betas <- betas[complete.cases(betas),]
+  betas$qval <- p.adjust(betas$pval, method = "BH")
+
+  betas
+}
+```
+
+## OLS
+
+```{r}
+ols_res <- compute_test(mev$summary, b, "sigma_sq_ols")
+```
+
+```{r,cache=TRUE}
+ggplot(ols_res, aes(pval)) +
+  geom_histogram(binwidth = 0.01) +
+  geom_vline(xintercept = 0.10)
+```
+
+```{r,cache=TRUE}
+ggplot(ols_res, aes(qval)) +
+  geom_histogram(binwidth = 0.01) +
+  geom_vline(xintercept = 0.10)
+```
+
+## ME shrinkage
+
+```{r}
+me_shrink <- compute_test(mev$summary, b, "smooth_sigma_sq_pmax", "sigma_q_sq")
+me_shrink_wald <- mutate(me_shrink, pval = pval_wald, qval = p.adjust(pval,
+    method = "BH"))
+```
+
+```{r,cache=TRUE}
+ggplot(me_shrink, aes(pval)) +
+  geom_histogram(binwidth = 0.01) +
+  geom_vline(xintercept = 0.10)
+```
+
+```{r,cache=TRUE}
+ggplot(me_shrink, aes(qval)) +
+  geom_histogram(binwidth = 0.01) +
+  geom_vline(xintercept = 0.10)
+```
+
+```{r,cache=TRUE}
+ggplot(me_shrink_wald, aes(pval)) +
+  geom_histogram(binwidth = 0.01) +
+  geom_vline(xintercept = 0.10)
+```
+
+```{r,cache=TRUE}
+ggplot(me_shrink_wald, aes(qval)) +
+  geom_histogram(binwidth = 0.01) +
+  geom_vline(xintercept = 0.10)
+```
+
+## ME shrinkage when sigma > 0
+
+For this test, simply shrink when sigma > 0.
+
+```{r}
+mev$summary <- mutate(mev$summary,
+  smooth_sigma_sq_gt0 = ifelse(sigma_sq <= 0, 0, smooth_sigma_sq_pmax)
+  )
+```
+
+```{r}
+me_shrink_gt0 <- compute_test(mev$summary, b, "smooth_sigma_sq_gt0", "sigma_q_sq")
+```
+
+## Don't add back in technical var
+
+```{r}
+me_no_tech <- compute_test(mev$summary, b, "smooth_sigma_sq_pmax")
+```
+
+## Scale variance
+
+```{r}
+me_shrink_scale <- me_shrink
+me_shrink_scale <- mutate(me_shrink_scale, se_b = se_b / 2)
+me_shrink_scale <- mutate(me_shrink_scale,
+  t_stat = b / se_b,
+  pval = 2 * pt(abs(t_stat), deg_free, lower.tail = FALSE))
+me_shrink_scale$qval <- p.adjust(me_shrink_scale$pval, method = "BH")
+```
+
+# pFDR
+
+```{r}
+# gamma in the Storey paper
+gs <- seq(0.02, 1, length.out = 30)
+pi0 <- sapply(gs, function(g) with(me_shrink, sum(pval > g) / (length(pval) * (1 - g))))
+pi0
+plot(gs, pi0)
+```
+
+The true pi0:
+
+```{r}
+pi0_true <- NULL
+{
+  me_shrink_true<- semi_join(de_info, me_shrink, by = 'target_id')
+  pi0_true <- with(me_shrink_true, sum( !is_de ) / length(is_de))
+}
+pi0_true
+```
+
+## implementation
+
+```{r}
+pfdr <- function(pvals, lam) {
+  m <- length(pvals)
+  pi0 <- sum( pvals > lam ) / ((1 - lam) * m)
+  print(pi0)
+
+  # let's just give it the true prop
+  #pi0 <- pi0_true
+  print(pi0)
+  ordr <- order(pvals)
+  p <- pvals[ordr]
+  q <- p / 1:m
+  q <- q * pi0 * m
+  q_next <- c(q[2:m], q[m])
+  q <- pmin(q, q_next)
+
+  q[order(ordr)]
+}
+
+```
+
+```{r}
+me_shrink_pfdr <- mutate(me_shrink, qval = pfdr(pval, 0.5))
+me_shrink_wald_pfdr <- mutate(me_shrink_wald, qval = pfdr(pval, 0.6))
+```
+
+```{r}
+# gamma in the Storey paper
+gs <- seq(0.02, 1, length.out = 30)
+pi0 <- sapply(gs, function(g) with(me_shrink_wald, sum(pval > g) / (length(pval) * (1 - g))))
+pi0
+plot(gs, pi0)
+```
+
+```{r}
+ggplot(me_shrink_pfdr, aes(qval)) +
+  geom_histogram(binwidth = 0.01) +
+  geom_vline(xintercept = 0.10) +
+  xlim(0, 1)
+```
+
+```{r}
+me_shrink_pfdr %>%
+  filter(qval <= 0.10) %>%
+  summarise(sig = n())
+```
+
+```{r}
+ggplot(me_shrink_wald_pfdr, aes(qval)) +
+  geom_histogram(binwidth = 0.01) +
+  geom_vline(xintercept = 0.10) +
+  xlim(0, 1)
+```
+
+```{r}
+me_shrink_wald_pfdr %>%
+  filter(qval <= 0.10) %>%
+  summarise(sig = n())
+```
+
+# Benchmarks
+
+```{r}
+de_bench <- new_de_benchmark(
+  list(
+    deseq_res,
+    limma_res,
+    edgeR_res,
+    ols_res,
+    me_shrink,
+    #me_shrink_gt0,
+    #me_no_tech,
+    #me_shrink_scale,
+    #me_shrink_pfdr,
+    me_shrink_wald,
+    me_shrink_wald_pfdr
+    ),
+  c(
+    "DESeq2",
+    "voom",
+    "edgeR (tagwise)",
+    "OLS",
+    "sleuth (equal var)",
+    #"sleuth (equal var gt0)",
+    #"sleuth (no tech)",
+    #"sleuth (scale shrink)",
+    #"sleuth (equal var, pFDR)",
+    "sleuth (equal var, Wald)",
+    "sleuth (equal var, Wald, pFDR)"
+    ), de_info)
+```
+
+```{r}
+fdr_nde_plot(de_bench, TRUE) +
+  xlim(2000, 7500) +
+  ylim(0, 0.2) +
+  theme(legend.position = c(0.1, 0.85))
+```
+
+# Low technical variance
+
+```{r}
+mev_filt <- filter(mev$summary, sigma_sq > 0)
+b_filt <- semi_join(b, mev_filt, by = 'target_id')
+```
+
+## ME shrinkage
+
+```{r}
+me_shrink_filt <- semi_join(me_shrink, mev_filt, by = 'target_id')
+```
+

@@ -1,16 +1,7 @@
-devtools::document("~/dev/sleuth")
-devtools::install("~/dev/sleuth")
-
-# dev_mode()
-
-devtools::document("~/dev/mamabear")
-devtools::install("~/dev/mamabear")
-
 source("benchmark_methods.R")
 source("gene_common.R")
 
 library("cowplot")
-library("sleuth")
 library("mamabear")
 
 ###
@@ -59,16 +50,17 @@ fdr_nde_plot(de_bench, FALSE) +
   theme(legend.position = c(0.1, 0.80)) +
   xlab('number of genes called DE') +
   ylab('FDR') +
-  theme_bw(25)
+  theme_cowplot(25)
 
 fdr_tpr_plot(de_bench) +
-  xlim(0, 0.25)
+  xlim(0, 0.25) +
+  theme_cowplot(25)
 
 fdr_efdr_plot(de_bench) +
   geom_abline(slope = 1, intercept = 0) +
-  theme_bw(25) +
   xlim(0, 0.25) +
-  ylim(0, 0.25)
+  ylim(0, 0.25) +
+  theme_cowplot(25)
 
 # gene lifting
 sgr <- run_sleuth(sample_to_condition, min_reads = 5, lift_genes = TRUE)
@@ -96,18 +88,19 @@ de_gene_bench <- new_de_benchmark(all_gene_results, names(all_gene_results),
   de_genes)
 
 fdr_nde_plot(de_gene_bench, FALSE) +
-  xlim(0, 8000) +
+  xlim(0, 4200) +
   ylim(0, 0.10) +
   theme(legend.position = c(0.1, 0.80)) +
   xlab('number of genes called DE') +
   ylab('FDR') +
-  theme_bw(25)
+  theme_cowplot(25)
 
 fdr_tpr_plot(de_gene_bench) +
-  xlim(0, 0.25)
+  xlim(0, 0.25) +
+  theme_cowplot(25)
 
 fdr_efdr_plot(de_gene_bench) +
   geom_abline(slope = 1, intercept = 0) +
-  theme_bw(25) +
   xlim(0, 0.25) +
-  ylim(0, 0.25)
+  ylim(0, 0.25) +
+  theme_cowplot(25)

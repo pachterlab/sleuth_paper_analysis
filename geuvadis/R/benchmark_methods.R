@@ -3,6 +3,7 @@ library("DESeq2")
 library("EBSeq")
 library("edgeR")
 library("limma")
+library("sleuth")
 
 get_human_gene_names <- function() {
   mart <- biomaRt::useMart(biomart = "ENSEMBL_MART_ENSEMBL", dataset = "hsapiens_gene_ensembl",

@@ -1,3 +1,5 @@
+# Merge counts from `featureCounts` output
+
 args <- commandArgs(trailingOnly = TRUE)
 
 print(args)

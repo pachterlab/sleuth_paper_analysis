@@ -1,2 +1,10 @@
 *.DS_Store
 *history
+.RData*
+*.snakemake
+
+orig_sim/
+
+geuvadis/results
+geuvadis/sims
+geuvadis/tmp
