@@ -2,7 +2,8 @@ include: '../config.py'
 
 rule all:
     input:
-        KALLISTO
+        KALLISTO,
+        RSEM_SIMULATE
 
 rule get_kallisto:
     output:
@@ -14,3 +15,17 @@ rule get_kallisto:
         'tar -xf kallisto_binary.tar.gz; '
         'rmdir kallisto_linux; ' # snakemake will automatically make this directory
         'mv kallisto_linux-* kallisto_linux; '
+
+rule get_rsem_simulate:
+    output:
+        RSEM_SIMULATE
+    params:
+        url = 'https://github.com/pimentel/RSEM',
+        tmp = 'rsem_simulate_tmp'
+    shell:
+        'git clone --branch simulate-counts --depth 1 {params.url} {params.tmp}; '
+        'cd {params.tmp}; '
+        'make rsem-simulate-reads; '
+        'cd ..; '
+        'rmdir rsem_simulate; '
+        'mv {params.tmp} rsem_simulate; '
