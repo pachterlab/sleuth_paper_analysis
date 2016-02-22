@@ -62,6 +62,37 @@ make_sim <- function(sim_df, X, size_factors = rep(1, nrow(X))) {
   matrix(rnbinom(n * p, mu = mu, size = 1 / disp), ncol = p)
 }
 
+# all size factors equal to 1
+sf_mode_1 <- function(n) {
+  rep.int(1, n)
+}
+
+# random size factors such that the geometric mean is 1
+sf_mode_2 <- function(n) {
+  nsamp <- 0
+  res <- numeric(n)
+
+  while (nsamp < n) {
+    if ( (n - nsamp) == 1 ) {
+      nsamp <- nsamp + 1
+      res[nsamp] <- 1
+    } else {
+      eq <- sample(c(TRUE, FALSE), 1)
+      if (eq) {
+        nsamp <- nsamp + 1
+        res[nsamp] <- 1
+      } else {
+        nsamp <- nsamp + 1
+        res[nsamp] <- 1 / 3
+        nsamp <- nsamp + 1
+        res[nsamp] <- 3
+      }
+    }
+  }
+
+  res[sample.int(length(res))]
+}
+
 #' Simulate counts from a negative binomial
 #'
 #' Simulate counts from a negative binomial using a data.frame prepared from
@@ -95,7 +126,7 @@ simulate_counts <- function(prep_df,
   log_fc_sd = 1,
   constant_fc = NULL,
   sim_function = make_sim,
-  size_factors = rep(1, n_a + n_b),
+  size_factor_function = sf_mode_1,
   min_magnitude = log(1.5)) {
   stopifnot( is(prep_df, "data.frame") )
 
@@ -106,41 +137,48 @@ simulate_counts <- function(prep_df,
   n_de <- as.integer(ceiling(n_pass_filt * prop_de))
   n_null <- as.integer(n_pass_filt - n_de)
 
+  n_samples <- n_a + n_b
+
   condition <- factor(c(rep("A", n_a), rep("B", n_b)))
   X <- model.matrix(~ condition)
 
-  row_idx_de <- sample(which(prep_df$sim_filt), n_de, replace = FALSE)
-
-  # choose which will be DE
-  prep_df <- prep_df %>%
-    mutate(is_de = FALSE)
-
-  prep_df$is_de[row_idx_de] <- TRUE
-
-  # assign log fold change using a normal centered at zero
-  # log_fc <- rnorm(n_de, mean = 0, sd = log_fc_sd)
-  log_fc <- NULL
-  if (is.null(constant_fc)) {
-    log_fc <- truncated_normal(n_de, min_magnitude = min_magnitude, sd = log_fc_sd)
-  } else {
-    log_fc <- rep.int(constant_fc, n_de)
-    log_fc <- sample(c(-1, 1), n_de, replace = TRUE) * log_fc
-  }
-  prep_df <- prep_df %>%
-    mutate(log_fc = 0)
-  prep_df$log_fc[row_idx_de] <- log_fc
-
   sim <- lapply(1:n_sim,
     function(i) {
+      # this needs to be re factored so that every different n_sim has different
+      # isoforms differentially expressed
+      row_idx_de <- sample(which(prep_df$sim_filt), n_de, replace = FALSE)
+
+      # choose which will be DE
+      prep_df <- dplyr::mutate(prep_df, is_de = FALSE)
+
+      prep_df$is_de[row_idx_de] <- TRUE
+
+      # assign log fold change using a normal centered at zero
+      # log_fc <- rnorm(n_de, mean = 0, sd = log_fc_sd)
+      log_fc <- NULL
+      if (is.null(constant_fc)) {
+        log_fc <- truncated_normal(n_de, min_magnitude = min_magnitude,
+          sd = log_fc_sd)
+      } else {
+        log_fc <- rep.int(constant_fc, n_de)
+        log_fc <- sample(c(-1, 1), n_de, replace = TRUE) * log_fc
+      }
+      prep_df <- dplyr::mutate(prep_df, log_fc = 0)
+      prep_df$log_fc[row_idx_de] <- log_fc
+
+      size_factors <- size_factor_function(n_samples)
       s <- sim_function(prep_df, X, size_factors = size_factors)
       colnames(s)
       colnames(s) <- paste0(condition, c(1:n_a, 1:n_b))
       rownames(s) <- prep_df$target_id
-      s
+
+      list(counts = s, info = prep_df, condition = condition,
+        size_factors = size_factors)
     })
 
-  list(counts = sim, info = prep_df, condition = condition,
-    size_factors = size_factors)
+  # list(counts = sim, info = prep_df, condition = condition,
+  #   size_factors = size_factors)
+  sim
 }
 
 simulate_gene_counts <- function(prep_df,

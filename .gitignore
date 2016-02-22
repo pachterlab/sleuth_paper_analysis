@@ -11,6 +11,8 @@ annotation/
 orig_sim/
 software/
 
+*defunct/
+
 *_files/
 *_cache/
 
@@ -18,3 +20,6 @@ geuvadis/results
 geuvadis/sims
 geuvadis/tmp
 geuvadis/img
+
+# do not ignore these files
+!*Snakefile

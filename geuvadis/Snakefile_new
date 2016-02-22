@@ -1,0 +1,88 @@
+include: '../config.py'
+
+isoform_simulations = [
+    'sims/isoform_{a}_{b}_{rep}_{seed}_{sf_mode}'.
+        format(a = 3, b = 3, rep = 5, seed = 1, sf_mode = 1)
+]
+
+def generate_reads(simulation_string):
+    base = '{}/exp_'.format(simulation_string)
+    mode, n_a, n_b, n_sim, seed, sf = simulation_string.split('_')
+    n_sim = int(n_sim)
+    n = int(n_a) + int(n_b)
+    sims = []
+    for i in range(1, n_sim + 1):
+        current_experiment = base + str(i)
+        for j in range(1, n + 1):
+            current_simulation_1 = '{b}/{id}/sim_{id}_1.fq.gz'.format(
+                b = current_experiment, id = j)
+            current_simulation_2 = '{b}/{id}/sim_{id}_2.fq.gz'.format(
+                b = current_experiment, id = j)
+            sims.append(current_simulation_1)
+            sims.append(current_simulation_2)
+    return sims
+
+generate_reads(isoform_simulations[0])
+isoform_reads = [generate_reads(current_reads) for current_reads in isoform_simulations]
+
+rule all:
+    input:
+        # get all the metadata we need from geuvadis
+        'metadata/geu_meta.RData',
+        'results/prep_fin.RData',
+
+        isoform_simulations,
+        isoform_reads[0:5]
+
+
+rule geuvadis_metadata:
+    output:
+        'metadata/geu_meta.RData'
+    shell:
+        source_r('R', 'metadata.R')
+
+rule prep_finnish_samples:
+    input:
+        'metadata/geu_meta.RData'
+    output:
+        'results/prep_fin.RData'
+    shell:
+        source_r('R', 'mean_disp_pairs.R')
+
+###
+# simulation generation
+###
+
+# this simulation deals with modeling independent differential usage amongst the isoforms
+# basically, every isoform is looked at independently and decides whether or not it will be
+# differentially expressed independently.
+rule gen_sim_script_isoform:
+    input:
+        'results/prep_fin.RData'
+    output:
+        'sims/isoform_{n_a,\d+}_{n_b}_{n_sim}_{seed,\d+}_{sf,\d+}',
+        'sims/isoform_{n_a,\d+}_{n_b}_{n_sim}_{seed}_{sf}/sims.rds'
+    shell:
+        source_r('R', 'gen_sim.R') + ' '
+        'isoform_{wildcards.n_a}_{wildcards.n_b}_{wildcards.n_sim}_{wildcards.seed}_{wildcards.sf} '
+        ' {wildcards.n_sim}'
+        ' {wildcards.n_a}'
+        ' {wildcards.n_b}'
+        ' {wildcards.seed}'
+        ' {wildcards.sf}'
+
+rule make_simulation:
+    input:
+        'sims/{experiment}/sims.rds'
+    output:
+        'sims/{experiment}/exp_{num}/{id}/sim_{id}_1.fq.gz',
+        'sims/{experiment}/exp_{num}/{id}/sim_{id}_2.fq.gz'
+    params:
+        sims = 'sims/{experiment}/exp_{num}/{id}'
+    shell:
+        '{UPDATED_PATH}'
+        ' {params.sims}/sim_{wildcards.id}.sh'
+        ' {RSEM_ANNOTATION}'
+        ' {RSEM_MODEL}'
+        ' {params.sims}'
+        # ' {RSEM_SIMULATE}'

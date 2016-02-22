@@ -14,7 +14,7 @@ to_rsem <- function(target_id, counts, len, eff_len) {
 
   discard_counts_eff_len <- count_df$effective_length < .Machine$double.eps
   cat("Need to discard ", sum(discard_counts_eff_len),
-    " transcripts from simulation due to small counts\n")
+    " transcripts from simulation due to short effective length\n")
   cat("Total counts to discard: ",
     sum(count_df$expected_count[discard_counts_eff_len]), "\n")
 
@@ -34,7 +34,12 @@ to_rsem <- function(target_id, counts, len, eff_len) {
 #' @param rsem_example an example rsem \code{data.frame} read which is used for
 #' length and effective length
 #' @param out_dir the base directory to output simulation scripts
-counts_to_simulation <- function(counts, info, rsem_example, out_dir = "gen_sim") {
+counts_to_simulation <- function(
+  counts,
+  info,
+  rsem_example,
+  reads_seed,
+  out_dir = "gen_sim") {
   stopifnot( is(counts, "matrix") )
   stopifnot( is(info, "data.frame") )
 
@@ -103,7 +108,7 @@ counts_to_simulation <- function(counts, info, rsem_example, out_dir = "gen_sim"
           theta,
           total_reads,
           paste0("${OUT_DIR}/sim_", i),
-          "--seed", i,
+          "--seed", i + reads_seed,
           "--deterministic",
           "\n")
         )

@@ -1,7 +1,5 @@
 include: '../config.py'
 
-N_THREADS = 35
-
 ANNO = "../annotation"
 ANNO_PRE = "Homo_sapiens.GRCh38.rel80.cdna.all"
 

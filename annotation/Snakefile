@@ -3,6 +3,7 @@ include: '../config.py'
 rule all:
     input:
         TRANSCRIPTOME_FA,
+        RSEM_ANNOTATION + '.grp',
         TRANSCRIPTOME_GTF,
         GENOME_FA
 
@@ -10,9 +11,10 @@ rule get_transcriptome:
     output:
         TRANSCRIPTOME_FA
     shell:
-        'curl -o {output}'
+        'curl -o {output}.gz'
         ' --silent'
-        ' ftp://ftp.ensembl.org/pub/release-80/fasta/homo_sapiens/cdna/Homo_sapiens.GRCh38.cdna.all.fa.gz'
+        ' ftp://ftp.ensembl.org/pub/release-80/fasta/homo_sapiens/cdna/Homo_sapiens.GRCh38.cdna.all.fa.gz && '
+        ' gunzip {output}.gz'
 
 rule get_genome:
     output:
@@ -26,6 +28,35 @@ rule get_gtf:
     output:
         TRANSCRIPTOME_GTF
     shell:
-        'curl -o {output}'
+        'curl -o {output}.gz'
         ' --silent'
-        ' ftp://ftp.ensembl.org/pub/release-80/gtf/homo_sapiens/Homo_sapiens.GRCh38.80.gtf.gz'
+        ' ftp://ftp.ensembl.org/pub/release-80/gtf/homo_sapiens/Homo_sapiens.GRCh38.80.gtf.gz && '
+        ' gunzip {output}.gz'
+
+rule make_rsem_transcriptome:
+    input:
+        TRANSCRIPTOME_FA
+    output:
+        RSEM_ANNOTATION + '.grp'
+    shell:
+        'mkdir -p {RSEM_ANNOTATION_DIR};'
+        ' {UPDATED_PATH} rsem-prepare-reference {input} {RSEM_ANNOTATION_DIR}/ref'
+
+# rule prep_star:
+#     output:
+#         'index/star'
+#     shell: 'mkdir {output}'
+#
+rule star_index:
+    output:
+        STAR_DIRECTORY + '/Genome'
+    shell:
+        'mkdir -p {STAR_DIRECTORY} && '
+        'STAR '
+        ' --runThreadN 20'
+        ' --runMode genomeGenerate'
+        ' --outSAMstrandField intronMotif'
+        ' --genomeDir {STAR_DIRECTORY}'
+        ' --genomeFastaFiles {GENOME_FA}'
+        ' --sjdbGTFfile {TRANSCRIPTOME_GTF}'
+        ' --sjdbOverhang 75' # read length-1
