@@ -42,21 +42,31 @@ rule make_rsem_transcriptome:
         'mkdir -p {RSEM_ANNOTATION_DIR};'
         ' {UPDATED_PATH} rsem-prepare-reference {input} {RSEM_ANNOTATION_DIR}/ref'
 
+rule make_hisat_index:
+    input:
+        GENOME_FA
+    output:
+        expand('{0}.{1}.ht2', HISAT_DIRECTORY, range(1, 6))
+    shell:
+        '{UPDATED_PATH} '
+        'hisat2-build'
+        ' {input}'
+
 # rule prep_star:
 #     output:
 #         'index/star'
 #     shell: 'mkdir {output}'
 #
-rule star_index:
-    output:
-        STAR_DIRECTORY + '/Genome'
-    shell:
-        'mkdir -p {STAR_DIRECTORY} && '
-        'STAR '
-        ' --runThreadN 20'
-        ' --runMode genomeGenerate'
-        ' --outSAMstrandField intronMotif'
-        ' --genomeDir {STAR_DIRECTORY}'
-        ' --genomeFastaFiles {GENOME_FA}'
-        ' --sjdbGTFfile {TRANSCRIPTOME_GTF}'
-        ' --sjdbOverhang 75' # read length-1
+# rule star_index:
+#     output:
+#         STAR_DIRECTORY + '/Genome'
+#     shell:
+#         'mkdir -p {STAR_DIRECTORY} && '
+#         'STAR '
+#         ' --runThreadN 20'
+#         ' --runMode genomeGenerate'
+#         ' --outSAMstrandField intronMotif'
+#         ' --genomeDir {STAR_DIRECTORY}'
+#         ' --genomeFastaFiles {GENOME_FA}'
+#         ' --sjdbGTFfile {TRANSCRIPTOME_GTF}'
+#         ' --sjdbOverhang 75' # read length-1
