@@ -49,7 +49,7 @@ rule make_hisat_index:
     input:
         GENOME_FA
     output:
-        expand('{base}.{idx}.ht2', base = HISAT_DIRECTORY, idx = (1, 6))
+        expand('{base}.{idx}.ht2', base = HISAT_INDEX, idx = (1, 6))
     shell:
         '{UPDATED_PATH} '
         'hisat2-build'
