@@ -85,4 +85,3 @@ rule make_simulation:
         ' {RSEM_ANNOTATION}'
         ' {RSEM_MODEL}'
         ' {params.sims}'
-        # ' {RSEM_SIMULATE}'

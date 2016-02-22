@@ -3,18 +3,22 @@ include: '../config.py'
 rule all:
     input:
         KALLISTO,
-        RSEM_SIMULATE
+        RSEM_SIMULATE,
+        HISAT
 
 rule get_kallisto:
     output:
         KALLISTO
     params:
-        url = 'https://github.com/pachterlab/kallisto/releases/download/v0.42.4/kallisto_linux-v0.42.4.tar.gz'
+        url = 'https://github.com/pachterlab/kallisto/releases/download/v0.42.4/kallisto_linux-v0.42.4.tar.gz',
+        tmp = 'kallisto_linux'
     shell:
         'wget -O kallisto_binary.tar.gz {params.url}; '
         'tar -xf kallisto_binary.tar.gz; '
-        'rmdir kallisto_linux; ' # snakemake will automatically make this directory
-        'mv kallisto_linux-* kallisto_linux; '
+        'mv kallisto_linux-* {params.tmp}; '
+        'find {params.tmp} -perm +o+x -type f -exec cp {{}} bin \;'
+        ' && '
+        'rm -rf {params.tmp} kallisto*'
 
 rule get_rsem_simulate:
     output:
@@ -26,7 +30,23 @@ rule get_rsem_simulate:
         'git clone --branch simulate-counts --depth 1 {params.url} {params.tmp};'
         ' cd {params.tmp};'
         ' make;'
-        # 'make rsem-simulate-reads; '
         ' cd ..;'
-        ' rmdir rsem_simulate;'
-        ' mv {params.tmp} rsem_simulate;'
+        'find {params.tmp} -maxdepth 1 -perm +o+x -type f -exec cp {{}} bin \;'
+        ' && '
+        'find {params.tmp} -maxdepth 1 -type f -name "*.pm" -exec cp {{}} bin \;'
+        ' && '
+        ' rm -rf {params.tmp}'
+
+rule get_hisat:
+    output:
+        HISAT
+    params:
+        url = 'ftp://ftp.ccb.jhu.edu/pub/infphilo/hisat2/downloads/hisat2-2.0.1-beta-Linux_x86_64.zip'
+    shell:
+        'wget -O hisat2.zip {params.url}'
+        ' && '
+        'unzip hisat2.zip'
+        ' && '
+        'find hisat2* -perm +o+x -type f -exec cp {{}} bin \;'
+        ' && '
+        'rm -rf hisat2*'

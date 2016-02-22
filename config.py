@@ -16,15 +16,20 @@ N_THREADS = 35
 ###
 # software
 ###
-KALLISTO = BASE + '/software/kallisto_linux/kallisto'
+BIN = BASE + '/software/bin'
+
+KALLISTO = BIN + '/kallisto'
 
 RSEM_PATH = BASE + '/software/rsem_simulate'
 RSEM_SIMULATE = RSEM_PATH + '/rsem-simulate-reads'
+RSEM_SIMULATE = BIN + '/rsem-simulate-reads'
 
-UPDATED_PATH = 'PATH=' + ':'.join([
-    RSEM_PATH,
-    getenv('PATH')
-    ])
+# UPDATED_PATH = 'PATH=' + ':'.join([
+#     RSEM_PATH,
+#     getenv('PATH')
+#     ])
+UPDATED_PATH = 'PATH=' + BIN + ':$PATH'
+HISAT = BIN + '/hisat2'
 
 # import os
 
