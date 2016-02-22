@@ -5,7 +5,10 @@ rule all:
         TRANSCRIPTOME_FA,
         RSEM_ANNOTATION + '.grp',
         TRANSCRIPTOME_GTF,
-        GENOME_FA
+
+        # genome stuff
+        GENOME_FA,
+        expand('{base}.{idx}.ht2', base = HISAT_DIRECTORY, idx = (1, 6))
 
 rule get_transcriptome:
     output:
@@ -46,7 +49,7 @@ rule make_hisat_index:
     input:
         GENOME_FA
     output:
-        expand('{0}.{1}.ht2', HISAT_DIRECTORY, range(1, 6))
+        expand('{base}.{idx}.ht2', base = HISAT_DIRECTORY, idx = (1, 6))
     shell:
         '{UPDATED_PATH} '
         'hisat2-build'
