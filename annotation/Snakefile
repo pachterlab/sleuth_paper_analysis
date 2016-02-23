@@ -8,7 +8,7 @@ rule all:
 
         # genome stuff
         GENOME_FA,
-        expand('{base}.{idx}.ht2', base = HISAT_DIRECTORY, idx = (1, 6))
+        expand('{base}.{idx}.ht2', base = HISAT_INDEX, idx = (1, 6))
 
 rule get_transcriptome:
     output:
@@ -26,6 +26,8 @@ rule get_genome:
         'curl -o {output}'
         ' --silent'
         ' ftp://ftp.ensembl.org/pub/release-80/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz'
+        ' && '
+        'gunzip {output}.gz'
 
 rule get_gtf:
     output:
@@ -48,12 +50,16 @@ rule make_rsem_transcriptome:
 rule make_hisat_index:
     input:
         GENOME_FA
+    threads:
+        N_THREADS
     output:
         expand('{base}.{idx}.ht2', base = HISAT_INDEX, idx = (1, 6))
     shell:
         '{UPDATED_PATH} '
         'hisat2-build'
+        ' -p {threads}'
         ' {input}'
+        ' {HISAT_INDEX}'
 
 # rule prep_star:
 #     output:

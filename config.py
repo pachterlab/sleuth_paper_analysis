@@ -46,7 +46,7 @@ TRANSCRIPTOME_FA = BASE + '/annotation/' + TRANSCRIPTOME_NAME + '.fa'
 TRANSCRIPTOME_GTF = BASE + '/annotation/' + TRANSCRIPTOME_NAME + '.gtf'
 
 GENOME_NAME = 'Homo_sapiens.GRCh38.dna.primary_assembly.rel80'
-GENOME_FA = BASE + '/annotation/' + GENOME_NAME + '.fa.gz'
+GENOME_FA = BASE + '/annotation/' + GENOME_NAME + '.fa'
 
 # STAR_DIRECTORY = BASE + '/index/star_' + TRANSCRIPTOME_NAME
 # STAR_INDEX = STAR_DIRECTORY + '/Genome'
