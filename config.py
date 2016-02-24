@@ -20,6 +20,8 @@ BIN = BASE + '/software/bin'
 
 KALLISTO = BIN + '/kallisto'
 
+CUFFLINKS = BIN + '/cufflinks'
+
 RSEM_PATH = BASE + '/software/rsem_simulate'
 RSEM_SIMULATE = RSEM_PATH + '/rsem-simulate-reads'
 RSEM_SIMULATE = BIN + '/rsem-simulate-reads'
@@ -30,6 +32,8 @@ RSEM_SIMULATE = BIN + '/rsem-simulate-reads'
 #     ])
 UPDATED_PATH = 'PATH=' + BIN + ':$PATH'
 HISAT = BIN + '/hisat2'
+
+SAMTOOLS = BIN + '/samtools'
 
 # import os
 

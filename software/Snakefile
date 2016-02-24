@@ -4,7 +4,9 @@ rule all:
     input:
         KALLISTO,
         RSEM_SIMULATE,
-        HISAT
+        HISAT,
+        CUFFLINKS,
+        SAMTOOLS
 
 rule get_kallisto:
     output:
@@ -19,6 +21,38 @@ rule get_kallisto:
         'find {params.tmp} -perm /111 -type f -exec cp {{}} bin \;'
         ' && '
         'rm -rf {params.tmp} kallisto*'
+
+rule get_cufflinks:
+    output:
+        CUFFLINKS
+    params:
+        url = 'http://cole-trapnell-lab.github.io/cufflinks/assets/downloads/cufflinks-2.2.1.Linux_x86_64.tar.gz',
+        tmp = 'cufflinks'
+    shell:
+        'wget -O {params.tmp}.tar.gz {params.url}'
+        ' && '
+        'tar -xf {params.tmp}.tar.gz'
+        ' && '
+        'find {params.tmp}-* -perm /111 -type f -exec cp {{}} bin \;'
+        ' && '
+        'rm -rf {params.tmp}*'
+
+rule get_samtools:
+    output:
+        SAMTOOLS
+    params:
+        url = 'https://github.com/samtools/samtools/releases/download/1.3/samtools-1.3.tar.bz2',
+        tmp = 'samtools'
+    shell:
+        'wget -O {params.tmp}.tar.gz {params.url}'
+        ' && '
+        'tar -xf {params.tmp}.tar.gz'
+        ' && '
+        'cd {params.tmp}-*'
+        ' && '
+        'make prefix=.. install'
+        ' && '
+        'rm -rf {params.tmp}*'
 
 rule get_rsem_simulate:
     output:

@@ -22,8 +22,51 @@ def generate_reads(simulation_string):
             sims.append(current_simulation_2)
     return sims
 
+def generate_base(simulation_string):
+    base = '{}/exp_'.format(simulation_string)
+    mode, n_a, n_b, n_sim, seed, sf = simulation_string.split('_')
+    n_sim = int(n_sim)
+    n = int(n_a) + int(n_b)
+    sims = []
+    for i in range(1, n_sim + 1):
+        current_experiment = base + str(i)
+        for j in range(1, n + 1):
+            sims.append(current_experiment + '/' + str(j))
+    return sims
+
+def get_simulation_info(experiment_string):
+    mode, a, b, n, seed, sf = experiment_string.split('_')
+    result = {
+        'mode': mode,
+        'a': int(a),
+        'b': int(b),
+        'n': int(n),
+        'seed': int(seed),
+        'sf': int(sf)
+    }
+    return result
+
+def get_all_ids(wildcards, expansion_string):
+    info = get_simulation_info(wildcards['experiment'])
+    all_ids = range(1, info['a'] + info['b'] + 1)
+    print('in here!', all_ids)
+    return expand(expansion_string, id = all_ids)
+
 generate_reads(isoform_simulations[0])
 isoform_reads = [generate_reads(current_reads) for current_reads in isoform_simulations]
+isoform_bam = [b + '/hisat.bam' for b in generate_base(isoform_simulations[0])]
+
+
+# print(isoform_reads[0][0:5])
+# print(isoform_bam[0:4])
+def get_ids(wildcards, file_prefix, file_suffix):
+    experiment = wildcards['experiment']
+    num = wildcards['num']
+
+    info = get_simulation_info(experiment)
+
+    # prefix = '{0}/{1}/exp_{2}/{3}'.format(file_prefix, experiment, num, )
+
 
 rule all:
     input:
@@ -31,8 +74,13 @@ rule all:
         'metadata/geu_meta.RData',
         'results/prep_fin.RData',
 
-        isoform_simulations,
-        isoform_reads[0:5]
+        isoform_reads[0][0:5],
+        isoform_bam[0:5],
+
+        'sims/isoform_3_3_5_1_1/exp_1/results/cuffdiff/isoform_exp.diff'
+
+        # isoform_simulations[0:5],
+        # isoform_reads[0:5]
 
 
 rule geuvadis_metadata:
@@ -85,3 +133,86 @@ rule make_simulation:
         ' {RSEM_ANNOTATION}'
         ' {RSEM_MODEL}'
         ' {params.sims}'
+
+rule hisat_alignment:
+    input:
+        'sims/{experiment}/exp_{num}/{id}/sim_{id}_1.fq.gz',
+        'sims/{experiment}/exp_{num}/{id}/sim_{id}_2.fq.gz'
+    output:
+        'sims/{experiment}/exp_{num}/{id}/hisat.bam'
+    threads: N_THREADS
+    shell:
+        '{UPDATED_PATH}'
+        ' hisat2'
+        ' -x {HISAT_INDEX}'
+        ' -1 {input[0]}'
+        ' -2 {input[1]}'
+        ' --dta-cufflinks'
+        ' -p {threads}'
+        ' | '
+        '{UPDATED_PATH} samtools view -Sb - '
+        ' > '
+        '{output}.unsorted'
+        ' && '
+        '{UPDATED_PATH} samtools sort'
+        ' -o {output}'
+        ' {output}.unsorted'
+        ' && '
+        'rm {output}.unsorted'
+
+rule cuffquant:
+    input:
+        'sims/{experiment}/exp_{num}/{id}/hisat.bam',
+        TRANSCRIPTOME_GTF
+    output:
+        'sims/{experiment}/exp_{num}/{id}/cuffquant/abundances.cxb'
+    threads: N_THREADS
+    params:
+        output = 'sims/{experiment}/exp_{num}/{id}/cuffquant'
+    shell:
+        '{UPDATED_PATH}'
+        ' cuffquant'
+        ' -p {threads}'
+        ' -o {params.output}'
+        ' -b {GENOME_FA}'
+        ' -u'
+        ' -q'
+        ' {TRANSCRIPTOME_GTF}'
+        ' {input[0]}'
+
+def get_cuffdiff(wildcards):
+    experiment = wildcards['experiment']
+    info = get_simulation_info(experiment)
+    num = wildcards['num']
+    ids = range(1, info['a'] + info['b'] + 1)
+
+    return expand('sims/{experiment}/exp_{num}/{id}/cuffquant/abundances.cxb',
+        experiment = experiment,
+        num = num,
+        id = ids)
+
+rule cuffdiff:
+    input:
+        get_cuffdiff
+    output:
+        'sims/{experiment}/exp_{num,\d+}/results/cuffdiff',
+        'sims/{experiment}/exp_{num}/results/cuffdiff/isoform_exp.diff',
+        'sims/{experiment}/exp_{num}/results/cuffdiff/gene_exp.diff'
+    run:
+        info = get_simulation_info(wildcards['experiment'])
+        left = [input[i] for i in range(1, info['a'] + 1)]
+        right = [input[i] for i in range(info['a'] + 1,
+            info['a'] + info['b'] + 1)]
+        print(left)
+        print(right)
+
+        cmd = ''.join([UPDATED_PATH,
+            'cuffdiff',
+            '-p {threads}',
+            '-o {output[0]}',
+            '-b {GENOME_FA}',
+            '-u',
+            left,
+            right,
+            ])
+        print(cmd)
