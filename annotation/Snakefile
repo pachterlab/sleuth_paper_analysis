@@ -5,6 +5,7 @@ rule all:
         TRANSCRIPTOME_FA,
         RSEM_ANNOTATION + '.grp',
         TRANSCRIPTOME_GTF,
+        KALLISTO_INDEX,
 
         # genome stuff
         GENOME_FA,
@@ -61,6 +62,16 @@ rule make_hisat_index:
         ' {input}'
         ' {HISAT_INDEX}'
 
+rule kallisto_index:
+    input:
+        TRANSCRIPTOME_FA
+    output:
+        KALLISTO_INDEX
+    shell:
+        '{UPDATED_PATH} '
+        'kallisto index'
+        ' -i {output}'
+        ' {input}'
 # rule prep_star:
 #     output:
 #         'index/star'

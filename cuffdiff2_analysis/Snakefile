@@ -1,0 +1,63 @@
+include: '../config.py'
+
+from os.path import isfile
+
+N_THREADS = 9
+
+def get_sample_ids(fname):
+    ret = []
+    with open(fname, 'r') as fhandle:
+        for line in fhandle:
+            ret.append(line.strip("\n"))
+    return ret
+
+META = 'metadata/hiseq_accession.txt'
+
+SRA_PAIRED = []
+if isfile(META):
+    SRA_PAIRED = get_sample_ids(META)
+
+rule all:
+    input:
+        META,
+        expand('results/paired/{id}/kallisto/abundance.h5', id = SRA_PAIRED)
+
+rule metadata:
+    output:
+        META,
+        "metadata/hiseq_accession.txt"
+    shell:
+        source_r('R', 'get_sample_info.R')
+
+rule fastq_dump_paired:
+    input:
+        META,
+        "metadata/hiseq_accession.txt"
+    output:
+        'data/paired/{id}',
+        'data/paired/{id}/{id}_1.fastq.gz',
+        'data/paired/{id}/{id}_2.fastq.gz'
+    threads: 1
+    shell:
+        'fastq-dump'
+        ' --split-files'
+        ' -O {output[0]}'
+        ' --gzip'
+        ' {wildcards.id}'
+
+rule kallisto_paired:
+    input:
+        'data/paired/{id}/{id}_1.fastq.gz',
+        'data/paired/{id}/{id}_2.fastq.gz'
+    output:
+        'results/paired/{id}/kallisto',
+        'results/paired/{id}/kallisto/abundance.h5'
+    threads: 1
+    shell:
+        '{UPDATED_PATH} '
+        'kallisto quant'
+        ' -i {KALLISTO_INDEX}'
+        ' -b 30'
+        ' -t 7'
+        ' -o {output[0]}'
+        ' {input[0]} {input[1]}'

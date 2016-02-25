@@ -166,7 +166,7 @@ rule cuffquant:
         TRANSCRIPTOME_GTF
     output:
         'sims/{experiment}/exp_{num}/{id}/cuffquant/abundances.cxb'
-    threads: N_THREADS
+    threads: 7
     params:
         output = 'sims/{experiment}/exp_{num}/{id}/cuffquant'
     shell:
