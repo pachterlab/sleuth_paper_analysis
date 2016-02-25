@@ -55,7 +55,9 @@ def get_all_ids(wildcards, expansion_string):
 generate_reads(isoform_simulations[0])
 isoform_reads = [generate_reads(current_reads) for current_reads in isoform_simulations]
 isoform_bam = [b + '/hisat.bam' for b in generate_base(isoform_simulations[0])]
-
+isoform_kallisto = [b + '/kallisto/abundance.h5' for b in generate_base(isoform_simulations[0])]
+isoform_feature_counts = [b + '/featureCounts/featureCounts.txt' for b in generate_base(isoform_simulations[0])]
+print(isoform_feature_counts)
 
 # print(isoform_reads[0][0:5])
 # print(isoform_bam[0:4])
@@ -76,6 +78,8 @@ rule all:
 
         isoform_reads[0][0:5],
         isoform_bam[0:5],
+        isoform_kallisto[0:6],
+        isoform_feature_counts[0:6],
 
         'sims/isoform_3_3_5_1_1/exp_1/results/cuffdiff/isoform_exp.diff'
 
@@ -160,6 +164,21 @@ rule hisat_alignment:
         ' && '
         'rm {output}.unsorted'
 
+rule featureCounts:
+    input:
+        'sims/{experiment}/exp_{num}/{id}/hisat.bam'
+    output:
+        'sims/{experiment}/exp_{num}/{id}/featureCounts/featureCounts.txt'
+    threads: 5
+    shell:
+        '{UPDATED_PATH} '
+        'featureCounts '
+        ' -a {TRANSCRIPTOME_GTF}'
+        ' -o {output}'
+        ' -T {threads}'
+        ' -p'
+        ' {input}'
+
 rule cuffquant:
     input:
         'sims/{experiment}/exp_{num}/{id}/hisat.bam',
@@ -219,3 +238,23 @@ rule cuffdiff:
             ])
         print(cmd)
         shell(cmd)
+
+rule kallisto:
+    input:
+        'sims/{experiment}/exp_{num}/{id}/sim_{id}_1.fq.gz',
+        'sims/{experiment}/exp_{num}/{id}/sim_{id}_2.fq.gz'
+    output:
+        'sims/{experiment}/exp_{num}/{id}/kallisto',
+        'sims/{experiment}/exp_{num}/{id}/kallisto/abundance.h5',
+        'sims/{experiment}/exp_{num}/{id}/kallisto/abundance.tsv'
+    threads:
+        5
+    shell:
+        '{UPDATED_PATH} '
+        'kallisto quant'
+        ' -i {KALLISTO_INDEX}'
+        ' -b 50'
+        ' -o {output[0]}'
+        ' --bias'
+        ' -t {threads}'
+        ' {input[0]} {input[1]}'

@@ -6,7 +6,8 @@ rule all:
         RSEM_SIMULATE,
         HISAT,
         CUFFLINKS,
-        SAMTOOLS
+        SAMTOOLS,
+        FEATURE_COUNTS
 
 rule get_kallisto:
     output:
@@ -85,3 +86,17 @@ rule get_hisat:
         'find hisat2* -perm /111 -type f -exec cp {{}} bin \;'
         ' && '
         'rm -rf hisat2*'
+
+rule get_feature_counts:
+    output:
+        FEATURE_COUNTS
+    params:
+        url = 'http://downloads.sourceforge.net/project/subread/subread-1.5.0-p1/subread-1.5.0-p1-Linux-x86_64.tar.gz?r=https%3A%2F%2Fsourceforge.net%2Fprojects%2Fsubread%2Ffiles%2Fsubread-1.5.0-p1%2F&ts=1456431207&use_mirror=iweb'
+    shell:
+        'wget -O subread.tar.gz "{params.url}"'
+        ' && '
+        'tar -xf subread.tar.gz'
+        ' && '
+        'cp -rf subread*/bin/* bin'
+        ' && '
+        'rm -rf subread*'

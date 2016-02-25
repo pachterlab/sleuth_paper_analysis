@@ -35,6 +35,8 @@ HISAT = BIN + '/hisat2'
 
 SAMTOOLS = BIN + '/samtools'
 
+FEATURE_COUNTS = BIN + '/featureCounts'
+
 # import os
 
 # os.environ['PATH'] = RSEM_PATH + ':' + os.environ['PATH']
