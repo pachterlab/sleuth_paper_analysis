@@ -198,21 +198,24 @@ rule cuffdiff:
         'sims/{experiment}/exp_{num,\d+}/results/cuffdiff',
         'sims/{experiment}/exp_{num}/results/cuffdiff/isoform_exp.diff',
         'sims/{experiment}/exp_{num}/results/cuffdiff/gene_exp.diff'
+    threads: 3
     run:
         info = get_simulation_info(wildcards['experiment'])
-        left = [input[i] for i in range(1, info['a'] + 1)]
-        right = [input[i] for i in range(info['a'] + 1,
-            info['a'] + info['b'] + 1)]
-        print(left)
-        print(right)
+        # I'm not sure if this is necessary, but at least this ensures they are sorted correctly
+        input.sort(key = lambda x: int(x.split('/')[3]))
+        left = [input[i] for i in range(0, info['a'])]
+        right = [input[i] for i in range(info['a'], info['a'] + info['b'])]
 
-        cmd = ''.join([UPDATED_PATH,
+        cmd = ' '.join([UPDATED_PATH,
             'cuffdiff',
-            '-p {threads}',
-            '-o {output[0]}',
-            '-b {GENOME_FA}',
+            '-p', str(threads),
+            '-o', output[0],
+            '-b', GENOME_FA,
             '-u',
-            left,
-            right,
+            '-q',
+            TRANSCRIPTOME_GTF,
+            ','.join(left),
+            ','.join(right)
             ])
         print(cmd)
+        shell(cmd)
