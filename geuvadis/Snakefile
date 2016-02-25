@@ -1,74 +1,91 @@
 include: '../config.py'
 
-ANNO = "../annotation"
-ANNO_PRE = "Homo_sapiens.GRCh38.rel80.cdna.all"
+isoform_simulations = [
+    'sims/isoform_{a}_{b}_{rep}_{seed}_{sf_mode}'.
+        format(a = 3, b = 3, rep = 5, seed = 1, sf_mode = 1)
+]
 
+def generate_reads(simulation_string):
+    base = '{}/exp_'.format(simulation_string)
+    mode, n_a, n_b, n_sim, seed, sf = simulation_string.split('_')
+    n_sim = int(n_sim)
+    n = int(n_a) + int(n_b)
+    sims = []
+    for i in range(1, n_sim + 1):
+        current_experiment = base + str(i)
+        for j in range(1, n + 1):
+            current_simulation_1 = '{b}/{id}/sim_{id}_1.fq.gz'.format(
+                b = current_experiment, id = j)
+            current_simulation_2 = '{b}/{id}/sim_{id}_2.fq.gz'.format(
+                b = current_experiment, id = j)
+            sims.append(current_simulation_1)
+            sims.append(current_simulation_2)
+    return sims
 
-ANNO_FA = "{0}/{1}.fa".format( ANNO, ANNO_PRE )
-BWT_IDX = "../index/{0}".format( ANNO_PRE )
+def generate_base(simulation_string):
+    base = '{}/exp_'.format(simulation_string)
+    mode, n_a, n_b, n_sim, seed, sf = simulation_string.split('_')
+    n_sim = int(n_sim)
+    n = int(n_a) + int(n_b)
+    sims = []
+    for i in range(1, n_sim + 1):
+        current_experiment = base + str(i)
+        for j in range(1, n + 1):
+            sims.append(current_experiment + '/' + str(j))
+    return sims
 
-RSEM_ANNO = "../index/Homo_sapiens.GRCh38.rel80.cdna.all_rsem/ref"
-RSEM_MODEL = 'results/rsem/HG00365_7/out.stat/out.model'
+def get_simulation_info(experiment_string):
+    mode, a, b, n, seed, sf = experiment_string.split('_')
+    result = {
+        'mode': mode,
+        'a': int(a),
+        'b': int(b),
+        'n': int(n),
+        'seed': int(seed),
+        'sf': int(sf)
+    }
+    return result
 
-GTF = ANNO + '/Homo_sapiens.GRCh38.80.gtf'
+def get_all_ids(wildcards, expansion_string):
+    info = get_simulation_info(wildcards['experiment'])
+    all_ids = range(1, info['a'] + info['b'] + 1)
+    print('in here!', all_ids)
+    return expand(expansion_string, id = all_ids)
 
-GENOME = '/home/hjp/kallisto_paper_analysis/GRCh38_80/Homo_sapiens.GRCh38.dna.primary_assembly.fa'
+generate_reads(isoform_simulations[0])
+isoform_reads = [generate_reads(current_reads) for current_reads in isoform_simulations]
+isoform_bam = [b + '/hisat.bam' for b in generate_base(isoform_simulations[0])]
+isoform_kallisto = [b + '/kallisto/abundance.h5' for b in generate_base(isoform_simulations[0])]
+isoform_feature_counts = [b + '/featureCounts/featureCounts.txt' for b in generate_base(isoform_simulations[0])]
+print(isoform_feature_counts)
 
-KAL_IDX = '../index/Homo_sapiens.GRCh38.rel80.cdna.all.kidx'
+# print(isoform_reads[0][0:5])
+# print(isoform_bam[0:4])
+def get_ids(wildcards, file_prefix, file_suffix):
+    experiment = wildcards['experiment']
+    num = wildcards['num']
+
+    info = get_simulation_info(experiment)
+
+    # prefix = '{0}/{1}/exp_{2}/{3}'.format(file_prefix, experiment, num, )
+
 
 rule all:
     input:
+        # get all the metadata we need from geuvadis
         'metadata/geu_meta.RData',
         'results/prep_fin.RData',
-        'sims/3_3_1_1_1/de_info.tsv.gz',
-        expand('results/3_3_1_1_1/exp_1/{idx}/kallisto/abundance.h5',
-           idx = range(1, 7)),
-        'sims/3_3_1_1_2/de_info.tsv.gz',
-        expand('results/3_3_1_1_2/exp_1/{idx}/kallisto/abundance.h5',
-           idx = range(1, 7)),
-        'index/star/Genome',
-        expand('results/3_3_1_1_1/exp_1/{idx}/starAligned.sortedByCoord.out.bam',
-           idx = range(1, 7)),
-        expand('results/3_3_1_1_1/exp_1/{idx}/featureCounts.txt', idx = range(1, 7)),
-        expand('results/3_3_1_1_1/exp_1/counts.tsv'),
-        expand('results/3_3_1_1_2/exp_1/{idx}/starAligned.sortedByCoord.out.bam', idx = range(1, 7)),
-        expand('results/3_3_1_1_2/exp_1/{idx}/featureCounts.txt', idx = range(1, 7)),
-        expand('results/3_3_1_1_2/exp_1/counts.tsv'),
-        # expand('results/3_3_1_1_1/exp_1/cuffdiff/isoforms.fpkm_tracking'),
-        'sims/gene_3_3_1_1_1_1/de_info.tsv.gz',
-        # expand('sims/gene_3_3_1_1_1_1/exp_1/{id}/sim_{id}_1.fq.gz', id = range(1, 7)),
-        # expand('results/gene_3_3_1_1_1_1/exp_1/{idx}/kallisto/abundance.h5',
-        #    idx = range(1, 7)),
-        # expand('results/gene_3_3_1_1_1_1/exp_1/{idx}/featureCounts.txt', idx = range(1, 7)),
-        # expand('results/gene_3_3_1_1_1_1/exp_1/counts.tsv'),
-        'sims/gene_diff_fc_3_3_1_1_1_1/de_info.tsv.gz',
-        expand('sims/gene_diff_fc_3_3_1_1_1_1/exp_1/{id}/sim_{id}_1.fq.gz', id = range(1, 7)),
-        expand('results/gene_diff_fc_3_3_1_1_1_1/exp_1/{idx}/kallisto/abundance.h5',
-            idx = range(1, 7)),
-        expand('results/gene_diff_fc_3_3_1_1_1_1/exp_1/{idx}/featureCounts.txt', idx = range(1, 7)),
-        expand('results/gene_diff_fc_3_3_1_1_1_1/exp_1/counts.tsv'),
 
-        'sims/isoform_3_3_1_1_1/de_info.tsv.gz',
-        expand('sims/isoform_3_3_1_1_1/exp_1/{id}/sim_{id}_1.fq.gz', id = range(1, 7)),
-        expand('results/isoform_3_3_1_1_1/exp_1/{idx}/kallisto/abundance.h5',
-            idx = range(1, 7)),
-        expand('results/isoform_3_3_1_1_1/exp_1/{idx}/featureCounts.txt', idx = range(1, 7)),
-        expand('results/isoform_3_3_1_1_1/exp_1/counts.tsv')
+        isoform_reads[0][0:5],
+        isoform_bam[0:5],
+        isoform_kallisto[0:6],
+        isoform_feature_counts[0:6],
 
+        'sims/isoform_3_3_5_1_1/exp_1/results/cuffdiff/isoform_exp.diff'
 
-        #'results/prep_fin_lnorm.RData',
-        # 'sims/3_3_1_1/de_info.tsv.gz',
-        # 'sims/norm/3_3_1_1/de_info.tsv.gz',
-        # #expand('sims/3_3_1_1/sample_1/{idx}/kallisto/abundance.h5',
-        # #    idx = range(1, 7))
-        # #expand('sims/norm/3_3_1_1/sample_1/{idx}/kallisto/abundance.h5',
-        # #    idx = range(1, 7)),
-        # expand('sims/3_3_1_1/sample_1/{idx}/kallisto/abundance.h5',
-        #     idx = range(1, 7)),
-        # expand('results/3_3_1_1/sample_1/{id}/alignments/bwt_bitseq.bam', id = range(1,7)),
-        # #expand('results/3_3_1_1/sample_1/{id}/bitseq/results.RData', id = range(1,7))
-        # expand('results/3_3_1_1/sample_1/{id}/bitseq/bitseq.rpkm', id = range(1,7))
-        # #'sims/3_3_10_1/de_info.tsv.gz'
+        # isoform_simulations[0:5],
+        # isoform_reads[0:5]
+
 
 rule geuvadis_metadata:
     output:
@@ -84,62 +101,11 @@ rule prep_finnish_samples:
     shell:
         source_r('R', 'mean_disp_pairs.R')
 
-# rule prep_finnish_samples_lnorm:
-#     input:
-#         'results/prep_fin.RData'
-#     output:
-#         'results/prep_fin_lnorm.RData'
-#     shell:
-#         source_r('R', 'mean_var_lnorm_pairs.R')
-rule gen_sim_script_gene:
-    input:
-        'results/prep_fin.RData'
-    output:
-        'sims/gene_diff_fc_{n_a,\d+}_{n_b}_{n_sim}_{seed,\d+}_{sf,\d+}_{log_fc,\d+}',
-        'sims/gene_diff_fc_{n_a,\d+}_{n_b}_{n_sim}_{seed}_{sf,\d+}_{log_fc}/de_info.tsv.gz'
-    shell:
-        source_r('R', 'gen_sim_genes.R') + ' '
-        'gene_diff_fc_{wildcards.n_a}_{wildcards.n_b}_{wildcards.n_sim}_{wildcards.seed}_{wildcards.sf}_{wildcards.log_fc} '
-        '{wildcards.n_sim} '
-        '{wildcards.n_a} '
-        '{wildcards.n_b} '
-        '{wildcards.seed} '
-        '{wildcards.sf} '
-        '{wildcards.log_fc} '
+###
+# simulation generation
+###
 
-rule make_simulation:
-    input:
-        # 'sims/{n_a,\d+}_{n_b}_{n_sim}_{seed,\d+}_{sf,\d+}',
-        # 'sims/{n_a,\d+}_{n_b}_{n_sim}_{seed}_{sf}/de_info.tsv.gz'
-        'sims/{experiment}/de_info.tsv.gz'
-    output:
-        'sims/{experiment}/exp_{num}/{id}/sim_{id}_1.fq.gz',
-        'sims/{experiment}/exp_{num}/{id}/sim_{id}_2.fq.gz'
-    params:
-        sims = 'sims/{experiment}/exp_{num}/{id}'
-    shell:
-        '{params.sims}/sim_{wildcards.id}.sh '
-        '{RSEM_ANNO} '
-        '{RSEM_MODEL} '
-        '{params.sims}'
-
-
-rule gen_sim_script:
-    input:
-        'results/prep_fin.RData'
-    output:
-        'sims/{n_a,\d+}_{n_b}_{n_sim}_{seed,\d+}_{sf,\d+}',
-        'sims/{n_a,\d+}_{n_b}_{n_sim}_{seed}_{sf}/de_info.tsv.gz'
-    shell:
-        source_r('R', 'gen_sim.R') + ' '
-        '{wildcards.n_a}_{wildcards.n_b}_{wildcards.n_sim}_{wildcards.seed}_{wildcards.sf} '
-        '{wildcards.n_sim} '
-        '{wildcards.n_a} '
-        '{wildcards.n_b} '
-        '{wildcards.seed} '
-        '{wildcards.sf}'
-
-# the simulation deals with modeling independent differential usage amongst the isoforms
+# this simulation deals with modeling independent differential usage amongst the isoforms
 # basically, every isoform is looked at independently and decides whether or not it will be
 # differentially expressed independently.
 rule gen_sim_script_isoform:
@@ -147,318 +113,148 @@ rule gen_sim_script_isoform:
         'results/prep_fin.RData'
     output:
         'sims/isoform_{n_a,\d+}_{n_b}_{n_sim}_{seed,\d+}_{sf,\d+}',
-        'sims/isoform_{n_a,\d+}_{n_b}_{n_sim}_{seed}_{sf}/de_info.tsv.gz'
+        'sims/isoform_{n_a,\d+}_{n_b}_{n_sim}_{seed}_{sf}/sims.rds'
     shell:
         source_r('R', 'gen_sim.R') + ' '
         'isoform_{wildcards.n_a}_{wildcards.n_b}_{wildcards.n_sim}_{wildcards.seed}_{wildcards.sf} '
-        '{wildcards.n_sim} '
-        '{wildcards.n_a} '
-        '{wildcards.n_b} '
-        '{wildcards.seed} '
-        '{wildcards.sf}'
+        ' {wildcards.n_sim}'
+        ' {wildcards.n_a}'
+        ' {wildcards.n_b}'
+        ' {wildcards.seed}'
+        ' {wildcards.sf}'
 
-
-# rule make_sim:
-#     input:
-#         'sims/{n_a,\d+}_{n_b}_{n_sim}_{seed,\d+}_{sf,\d+}',
-#         'sims/{n_a,\d+}_{n_b}_{n_sim}_{seed}_{sf}/de_info.tsv.gz'
-#     output:
-#         'sims/{n_a}_{n_b}_{n_sim}_{seed}_{sf}/exp_{num}/{id}/sim_{id}_1.fq.gz',
-#         'sims/{n_a}_{n_b}_{n_sim}_{seed}_{sf}/exp_{num}/{id}/sim_{id}_2.fq.gz'
-#     params:
-#         sims = 'sims/{n_a}_{n_b}_{n_sim}_{seed}_{sf}/exp_{num}/{id}'
-#     shell:
-#         '{params.sims}/sim_{wildcards.id}.sh '
-#         '{RSEM_ANNO} '
-#         '{RSEM_MODEL} '
-#         '{params.sims}'
-
-rule gen_sim_script_norm:
+rule make_simulation:
     input:
-        'results/prep_fin.RData'
+        'sims/{experiment}/sims.rds'
     output:
-        'sims/norm/{n_a,\d+}_{n_b}_{n_sim}_{seed,\d+}',
-        'sims/norm/{n_a,\d+}_{n_b}_{n_sim}_{seed}/de_info.tsv.gz'
+        'sims/{experiment}/exp_{num}/{id}/sim_{id}_1.fq.gz',
+        'sims/{experiment}/exp_{num}/{id}/sim_{id}_2.fq.gz'
+    params:
+        sims = 'sims/{experiment}/exp_{num}/{id}'
     shell:
-        source_r('R', 'gen_sim_norm.R') + ' '
-        'norm/{wildcards.n_a}_{wildcards.n_b}_{wildcards.n_sim}_{wildcards.seed} '
-        '{wildcards.n_sim} '
-        '{wildcards.n_a} '
-        '{wildcards.n_b} '
-        '{wildcards.seed}'
+        '{UPDATED_PATH}'
+        ' {params.sims}/sim_{wildcards.id}.sh'
+        ' {RSEM_ANNOTATION}'
+        ' {RSEM_MODEL}'
+        ' {params.sims}'
 
-# rule kallisto:
-#     input:
-#         'sims/{n_a}_{n_b}_{n_sim}_{seed}_{sf}/exp_{num}/{id}/sim_{id}_1.fq.gz',
-#         'sims/{n_a}_{n_b}_{n_sim}_{seed}_{sf}/exp_{num}/{id}/sim_{id}_2.fq.gz'
-#     output:
-#         'results/{n_a}_{n_b}_{n_sim}_{seed}_{sf}/exp_{num}/{id}/kallisto',
-#         'results/{n_a}_{n_b}_{n_sim}_{seed}_{sf}/exp_{num}/{id}/kallisto/abundance.h5'
-#     params:
-#         sims = 'results/{n_a}_{n_b}_{n_sim}_{seed}_{sf}/exp_{num}/{id}'
-#     threads:
-#         7
-#     shell:
-#         '{KALLISTO} quant '
-#         '-i {KAL_IDX} '
-#         '-b 100 '
-#         '-t {threads} '
-#         '-o {output[0]} '
-#         '{input[0]} '
-#         '{input[1]}'
-        #'{params.sims}/sim_{wildcards.id}_1.fq.gz '
-        #'{params.sims}/sim_{wildcards.id}_2.fq.gz'
-
-rule kallisto_update:
+rule hisat_alignment:
     input:
         'sims/{experiment}/exp_{num}/{id}/sim_{id}_1.fq.gz',
         'sims/{experiment}/exp_{num}/{id}/sim_{id}_2.fq.gz'
     output:
-        'results/{experiment}/exp_{num}/{id}/kallisto',
-        'results/{experiment}/exp_{num}/{id}/kallisto/abundance.h5'
-    params:
-        sims = 'results/{experiment}/exp_{num}/{id}'
-    threads:
-        7
-    shell:
-        '{KALLISTO} quant '
-        '-i {KAL_IDX} '
-        '-b 100 '
-        '-t {threads} '
-        '-o {output[0]} '
-        '{input[0]} '
-        '{input[1]}'
-
-
-rule kallisto_norm:
-    input:
-        'sims/norm/{n_a}_{n_b}_{n_sim}_{seed}/de_info.tsv.gz'
-    output:
-        'sims/norm/{n_a}_{n_b}_{n_sim}_{seed}/sample_{num}/{id}',
-        'sims/norm/{n_a}_{n_b}_{n_sim}_{seed}/sample_{num}/{id}/kallisto',
-        'sims/norm/{n_a}_{n_b}_{n_sim}_{seed}/sample_{num}/{id}/kallisto/abundance.h5'
-    threads:
-        7
-    shell:
-        '{KALLISTO} quant '
-        '-i {KAL_IDX} '
-        '-b 100 '
-        '-t {threads} '
-        '-o {output[1]} '
-        '{output[0]}/sim_{wildcards.id}_1.fq.gz '
-        '{output[0]}/sim_{wildcards.id}_2.fq.gz'
-
-########################################################################
-# bowtie alignments
-########################################################################
-
-rule bowtie_bitseq:
-    input:
-        'sims/{n_a}_{n_b}_{n_sim}_{seed}/de_info.tsv.gz'
-    output:
-        'results/{n_a}_{n_b}_{n_sim}_{seed}/sample_{num}/{id}/alignments/bwt_bitseq.bam'
-    params:
-        sims = 'sims/{n_a}_{n_b}_{n_sim}_{seed}/sample_{num}/{id}'
-    threads:
-        N_THREADS
-    shell:
-        'bowtie '
-        '-q '
-        '-v 3 '
-        '-3 0 '
-        '-p {threads} '
-        '-m 100 '
-        '--sam '
-        '--seed 37 '
-        '{BWT_IDX} '
-        '-1 <(zcat {params.sims}/sim_{wildcards.id}_1.fq.gz) '
-        '-2 <(zcat {params.sims}/sim_{wildcards.id}_2.fq.gz) | '
-        'samtools view -Sb - > {output[0]}'
-
-rule bowtie_rsem:
-    input:
-        'sims/{n_a}_{n_b}_{n_sim}_{seed}/de_info.tsv.gz'
-    output:
-        'results/{n_a}_{n_b}_{n_sim}_{seed}/sample_{num}/{id}/alignments/bwt_rsem.bam'
-    params:
-        sims = 'sims/{n_a}_{n_b}_{n_sim}_{seed}/sample_{num}/{id}'
-    threads:
-        N_THREADS
-    shell:
-        'bowtie '
-        '-q '
-        '-n 2 '
-        '-e 99999999 '
-        '-m 200 '
-        '-I 1 '
-        '-X 1000 '
-        '-p {threads} '
-        '--sam '
-        '--seed 37 '
-        '{BWT_IDX} '
-        '-1 <(zcat {params.sims}/sim_{wildcards.id}_1.fq.gz) '
-        '-2 <(zcat {params.sims}/sim_{wildcards.id}_2.fq.gz) | '
-        'samtools view -Sb - > {output[0]}'
-
-rule bitseq:
-    input:
-        'results/{n_a}_{n_b}_{n_sim}_{seed}/sample_{num}/{id,\d+}/alignments/bwt_bitseq.bam'
-    output:
-        'results/{n_a}_{n_b}_{n_sim}_{seed}/sample_{num}/{id}/bitseq',
-        'results/{n_a}_{n_b}_{n_sim}_{seed}/sample_{num}/{id}/bitseq/bitseq.rpkm'
-    benchmark:
-        'benchmarks/{n_a}_{n_b}_{n_sim}_{seed}/sample_{num}/{id}/bitseq.json'
-    threads: 1
-    shell:
-        source_r('R', 'run_bitseq.R') +
-        ' bitseq_{wildcards.id} ../{output[0]}/bitseq ../{input} ../{ANNO_FA}'
-
-rule rsem:
-    input:
-        'results/{n_a}_{n_b}_{n_sim}_{seed}/sample_{num}/{id,\d+}/alignments/bwt_rsem.bam'
-    params:
-        base = 'results/{n_a}_{n_b}_{n_sim}_{seed}/sample_{num}/{id}/rsem/out'
-    output:
-        'results/{n_a}_{n_b}_{n_sim}_{seed}/sample_{num}/{id}/rsem/out.isoforms.results'
+        'sims/{experiment}/exp_{num}/{id}/hisat.bam'
     threads: N_THREADS
     shell:
-        'rsem-calculate-expression '
-        '--bam '
-        '--paired-end '
-        '--no-bam-output '
-        '-p {threads} '
-        '{input} '
-        '{RSEM_ANNO} '
-        '{params.base}'
+        '{UPDATED_PATH}'
+        ' hisat2'
+        ' -x {HISAT_INDEX}'
+        ' -1 {input[0]}'
+        ' -2 {input[1]}'
+        ' --dta-cufflinks'
+        ' -p {threads}'
+        ' | '
+        '{UPDATED_PATH} samtools view -Sb - '
+        ' > '
+        '{output}.unsorted'
+        ' && '
+        '{UPDATED_PATH} samtools sort'
+        ' -o {output}'
+        ' {output}.unsorted'
+        ' && '
+        'rm {output}.unsorted'
 
-
-rule prep_star:
-    output:
-        'index/star'
-    shell: 'mkdir {output}'
-
-rule star_index:
-    output:
-        'index/star/Genome'
-    shell:
-        'STAR '
-        '--runThreadN 20 '
-        '--runMode genomeGenerate '
-        '--outSAMstrandField intronMotif '
-        '--genomeDir index/star '
-        '--genomeFastaFiles {GENOME} '
-        '--sjdbGTFfile {GTF} '
-        '--sjdbOverhang 75 ' # read length-1
-
-rule star:
+rule featureCounts:
     input:
-        'sims/{experiment}/exp_{num}/{id}/sim_{id}_1.fq.gz',
-        'sims/{experiment}/exp_{num}/{id}/sim_{id}_2.fq.gz'
-    params:
-        base = 'results/{experiment}/exp_{num}/{id}/star'
-
+        'sims/{experiment}/exp_{num}/{id}/hisat.bam'
     output:
-        'results/{experiment}/exp_{num}/{id}/starAligned.sortedByCoord.out.bam'
-    threads: N_THREADS
+        'sims/{experiment}/exp_{num}/{id}/featureCounts/featureCounts.txt'
+    threads: 5
     shell:
-        'STAR '
-        '--runThreadN {threads} '
-        '--genomeDir index/star '
-        '--readFilesIn {input[0]} {input[1]} '
-        '--readFilesCommand zcat '
-        '--outSAMstrandField intronMotif '
-        # '--outFilterIntronMotifs RemoveNonCanonical '
-        '--outFileNamePrefix {params.base} '
-        '--outSAMtype BAM SortedByCoordinate '
-# rule star:
-#     input:
-#         'sims/{n_a}_{n_b}_{n_sim}_{seed}_{sf}/exp_{num}/{id}/sim_{id}_1.fq.gz',
-#         'sims/{n_a}_{n_b}_{n_sim}_{seed}_{sf}/exp_{num}/{id}/sim_{id}_2.fq.gz'
-#     params:
-#         base = 'results/{n_a}_{n_b}_{n_sim}_{seed}_{sf}/exp_{num}/{id}/star'
-#
-#     output:
-#         'results/{n_a}_{n_b}_{n_sim}_{seed}_{sf}/exp_{num}/{id}/starAligned.sortedByCoord.out.bam'
-#     threads: N_THREADS
-#     shell:
-#         'STAR '
-#         '--runThreadN {threads} '
-#         '--genomeDir index/star '
-#         '--readFilesIn {input[0]} {input[1]} '
-#
-#         '--readFilesCommand zcat '
-#         '--outSAMStrandField '
-#         '--outFilterIntronMotifs RemoveNonCanonical '
-#         '--outFileNamePrefix {params.base} '
-#         '--outSAMtype BAM SortedByCoordinate '
+        '{UPDATED_PATH} '
+        'featureCounts '
+        ' -a {TRANSCRIPTOME_GTF}'
+        ' -o {output}'
+        ' -T {threads}'
+        ' -p'
+        ' {input}'
 
-def cuffdiff_input(path, n_a, n_b):
-    a_str = []
-    b_str = []
-    # print(n_a, type(n_a), int(n_a))
-    n_a = int(n_a)
-    n_b = int(n_b)
-    print(type(path), path)
-    # print(n_b, type(n_b))
-    for i in range(1, n_a + 1):
-        cur = path + '/' + str(i) + '/starAligned.sortedByCoord.out.bam'
-        a_str.append(path + '/' + str(i) + '/starAligned.sortedByCoord.out.bam')
-    for i in range(n_a + 1, n_a + n_b + 1):
-        b_str.append(path + '/' + str(i) + '/starAligned.sortedByCoord.out.bam')
-    # print(a_str)
-    a_str = ','.join(a_str)
-    b_str = ','.join(b_str)
+rule cuffquant:
+    input:
+        'sims/{experiment}/exp_{num}/{id}/hisat.bam',
+        TRANSCRIPTOME_GTF
+    output:
+        'sims/{experiment}/exp_{num}/{id}/cuffquant/abundances.cxb'
+    threads: 7
+    params:
+        output = 'sims/{experiment}/exp_{num}/{id}/cuffquant'
+    shell:
+        '{UPDATED_PATH}'
+        ' cuffquant'
+        ' -p {threads}'
+        ' -o {params.output}'
+        ' -b {GENOME_FA}'
+        ' -u'
+        ' -q'
+        ' {TRANSCRIPTOME_GTF}'
+        ' {input[0]}'
 
-    return a_str + ' ' + b_str
+def get_cuffdiff(wildcards):
+    experiment = wildcards['experiment']
+    info = get_simulation_info(experiment)
+    num = wildcards['num']
+    ids = range(1, info['a'] + info['b'] + 1)
+
+    return expand('sims/{experiment}/exp_{num}/{id}/cuffquant/abundances.cxb',
+        experiment = experiment,
+        num = num,
+        id = ids)
 
 rule cuffdiff:
-    # input:
-    #     expand('results/{n_a}_{n_b}_{n_sim}_{seed}_{sf}/exp_{num}/{id}/starAligned.sortedByCoord.out.bam', id = range(1, 7))
+    input:
+        get_cuffdiff
     output:
-        base = 'results/{n_a}_{n_b}_{n_sim}_{seed}_{sf}/exp_{num}/',
-        result = 'results/{n_a}_{n_b}_{n_sim}_{seed}_{sf}/exp_{num}/cuffdiff/isoforms.fpkm_tracking'
-    threads: N_THREADS
+        'sims/{experiment}/exp_{num,\d+}/results/cuffdiff',
+        'sims/{experiment}/exp_{num}/results/cuffdiff/isoform_exp.diff',
+        'sims/{experiment}/exp_{num}/results/cuffdiff/gene_exp.diff'
+    threads: 3
     run:
-        cmd = 'cuffdiff ' + '{GTF} ' +\
-            ' -p {threads} ' +\
-            cuffdiff_input(output.base, wildcards.n_a, wildcards.n_b)
+        info = get_simulation_info(wildcards['experiment'])
+        # I'm not sure if this is necessary, but at least this ensures they are sorted correctly
+        input.sort(key = lambda x: int(x.split('/')[3]))
+        left = [input[i] for i in range(0, info['a'])]
+        right = [input[i] for i in range(info['a'], info['a'] + info['b'])]
+
+        cmd = ' '.join([UPDATED_PATH,
+            'cuffdiff',
+            '-p', str(threads),
+            '-o', output[0],
+            '-b', GENOME_FA,
+            '-u',
+            '-q',
+            TRANSCRIPTOME_GTF,
+            ','.join(left),
+            ','.join(right)
+            ])
         print(cmd)
         shell(cmd)
 
-
-rule featureCountsUpdated:
+rule kallisto:
     input:
-        'results/{experiment}/exp_{num}/{id}/starAligned.sortedByCoord.out.bam'
+        'sims/{experiment}/exp_{num}/{id}/sim_{id}_1.fq.gz',
+        'sims/{experiment}/exp_{num}/{id}/sim_{id}_2.fq.gz'
     output:
-        'results/{experiment}/exp_{num}/{id}/featureCounts.txt'
-    threads: N_THREADS
+        'sims/{experiment}/exp_{num}/{id}/kallisto',
+        'sims/{experiment}/exp_{num}/{id}/kallisto/abundance.h5',
+        'sims/{experiment}/exp_{num}/{id}/kallisto/abundance.tsv'
+    threads:
+        5
     shell:
-        'featureCounts '
-        '-a {GTF} '
-        '-o {output} '
-        '-T {threads} '
-        '-p '
-        '{input}'
-
-# rule featureCounts:
-#     input:
-#         'results/{n_a}_{n_b}_{n_sim}_{seed}_{sf}/exp_{num}/{id}/starAligned.sortedByCoord.out.bam'
-#     output:
-#         'results/{n_a}_{n_b}_{n_sim}_{seed}_{sf}/exp_{num}/{id}/featureCounts.txt'
-#     threads: N_THREADS
-#     shell:
-#         'featureCounts '
-#         '-a {GTF} '
-#         '-o {output} '
-#         '-T {threads} '
-#         '-p '
-#         '{input}'
-
-rule aggregate_counts:
-    output:
-        'results/{experiment}/exp_{num}/counts.tsv'
-    params:
-        base = 'results/{experiment}/exp_{num}'
-    threads: 1
-    shell:
-        source_r('R', 'merge_counts.R') +  ' ../{params.base} ../{output}'
+        '{UPDATED_PATH} '
+        'kallisto quant'
+        ' -i {KALLISTO_INDEX}'
+        ' -b 50'
+        ' -o {output[0]}'
+        ' --bias'
+        ' -t {threads}'
+        ' {input[0]} {input[1]}'
