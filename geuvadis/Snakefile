@@ -155,7 +155,7 @@ rule hisat_alignment:
         ' --dta-cufflinks'
         ' -p {threads}'
         ' | '
-        '{UPDATED_PATH} samtools view -Sb - '
+        '{UPDATED_PATH} samtools view -Sb -'
         ' > '
         '{output}.unsorted'
         ' && '
