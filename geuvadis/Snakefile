@@ -56,7 +56,7 @@ generate_reads(isoform_simulations[0])
 isoform_reads = [generate_reads(current_reads) for current_reads in isoform_simulations]
 isoform_bam = [b + '/hisat.bam' for b in generate_base(isoform_simulations[0])]
 isoform_kallisto = [b + '/kallisto/abundance.h5' for b in generate_base(isoform_simulations[0])]
-isoform_feature_counts = [b + '/featureCounts/featureCounts.txt' for b in generate_base(isoform_simulations[0])]
+isoform_feature_counts = [b + '/featureCounts.txt' for b in generate_base(isoform_simulations[0])]
 print(isoform_feature_counts)
 
 # print(isoform_reads[0][0:5])
@@ -81,7 +81,8 @@ rule all:
         isoform_kallisto[0:6],
         isoform_feature_counts[0:6],
 
-        'sims/isoform_3_3_5_1_1/exp_1/results/cuffdiff/isoform_exp.diff'
+        'sims/isoform_3_3_5_1_1/exp_1/results/cuffdiff/isoform_exp.diff',
+        'sims/isoform_3_3_5_1_1/exp_1/results/featureCounts/counts.tsv'
 
         # isoform_simulations[0:5],
         # isoform_reads[0:5]
@@ -166,9 +167,9 @@ rule hisat_alignment:
 
 rule featureCounts:
     input:
-        'sims/{experiment}/exp_{num}/{id}/hisat.bam'
+        'sims/{experiment}/exp_{num,\d+}/{id,\d+}/hisat.bam'
     output:
-        'sims/{experiment}/exp_{num}/{id}/featureCounts/featureCounts.txt'
+        'sims/{experiment}/exp_{num,\d+}/{id,\d+}/featureCounts.txt'
     threads: 5
     shell:
         '{UPDATED_PATH} '
@@ -178,6 +179,29 @@ rule featureCounts:
         ' -T {threads}'
         ' -p'
         ' {input}'
+
+def get_feature_counts(wildcards):
+    experiment = wildcards['experiment']
+    info = get_simulation_info(experiment)
+    num = wildcards['num']
+    ids = range(1, info['a'] + info['b'] + 1)
+
+    return expand(
+        'sims/{experiment}/exp_{num}/{id}/featureCounts.txt',
+        experiment = experiment,
+        num = num,
+        id = ids)
+
+rule aggregate_counts:
+    input:
+        get_feature_counts
+    output:
+        'sims/{experiment}/exp_{num,\d+}/results/featureCounts/counts.tsv'
+    params:
+        base = 'sims/{experiment}/exp_{num}'
+    threads: 1
+    shell:
+        source_r('R', 'merge_counts.R') +  ' ../{params.base} ../{output}'
 
 rule cuffquant:
     input:
