@@ -1,3 +1,6 @@
+# This file contains functions to run several different differential expression
+# methods, usually simply by providing the "count matrix"
+
 library("Biobase")
 library("DESeq2")
 library("EBSeq")
@@ -148,6 +151,35 @@ rename_target_id <- function(df, as_gene = FALSE) {
   } else {
     df
   }
+}
+
+current_path <- '../sims/isoform_3_3_5_1_1/exp_1/results/cuffdiff'
+tmp <- get_cuffdiff(current_path)
+
+get_cuffdiff <- function(results_path) {
+  isoform_de <- read.table(file.path(results_path, 'isoform_exp.diff'),
+    header = TRUE, stringsAsFactors = FALSE, sep = '\t')
+  isoform_de <- dplyr::select(isoform_de,
+    target_id = test_id,
+    ens_gene = gene_id,
+    status,
+    pval = p_value,
+    qval = q_value,
+    beta = one_of("log2(fold_change)")
+    )
+
+  gene_de <- read.table(file.path(results_path, 'gene_exp.diff'),
+    header = TRUE, stringsAsFactors = FALSE, sep = '\t')
+  gene_de <- dplyr::select(gene_de,
+    target_id = test_id,
+    ens_gene = gene_id,
+    status,
+    pval = p_value,
+    qval = q_value,
+    beta = one_of("log2(fold_change)")
+    )
+
+  list(isoform = isoform_de, gene = gene_de)
 }
 
 # The code below is a slightly modified version of the code from `DESeq2paper`
