@@ -53,11 +53,17 @@ def get_all_ids(wildcards, expansion_string):
     return expand(expansion_string, id = all_ids)
 
 generate_reads(isoform_simulations[0])
+
+def generate_files(specific_replication, suffix):
+    return [b + suffix for b in generate_base(specific_replication)]
+
 isoform_reads = [generate_reads(current_reads) for current_reads in isoform_simulations]
 isoform_bam = [b + '/hisat.bam' for b in generate_base(isoform_simulations[0])]
 isoform_kallisto = [b + '/kallisto/abundance.h5' for b in generate_base(isoform_simulations[0])]
 isoform_feature_counts = [b + '/featureCounts.txt' for b in generate_base(isoform_simulations[0])]
-print(isoform_feature_counts)
+# print(isoform_feature_counts)
+
+print(generate_files(isoform_simulations[0], '/hisat.bam'))
 
 # print(isoform_reads[0][0:5])
 # print(isoform_bam[0:4])
@@ -76,13 +82,19 @@ rule all:
         'metadata/geu_meta.RData',
         'results/prep_fin.RData',
 
-        isoform_reads[0][0:5],
-        isoform_bam[0:5],
-        isoform_kallisto[0:6],
-        isoform_feature_counts[0:6],
-
-        'sims/isoform_3_3_5_1_1/exp_1/results/cuffdiff/isoform_exp.diff',
-        'sims/isoform_3_3_5_1_1/exp_1/results/featureCounts/counts.tsv'
+        # isoform_reads[0][0:5],
+        # isoform_bam[0:5],
+        # isoform_kallisto[0:6],
+        # isoform_feature_counts[0:6],
+        #
+        # 'sims/isoform_3_3_5_1_1/exp_1/results/cuffdiff/isoform_exp.diff',
+        # expand('sims/isoform_3_3_6_1_1/exp_{n}/results/cuffdiff/isoform_exp.diff',
+        #     n = range(1, 7)),
+        # 'sims/isoform_3_3_5_1_1/exp_1/results/featureCounts/counts.tsv',
+        expand('sims/isoform_3_3_20_1_1/exp_{n}/results/sleuth',
+            n = range(1, 20 + 1))
+        # expand('sims/isoform_3_3_20_1_1/exp_{n}/results/cuffdiff/isoform_exp.diff',
+        #     n = range(1, 20 + 1))
 
         # isoform_simulations[0:5],
         # isoform_reads[0:5]
@@ -132,6 +144,8 @@ rule make_simulation:
         'sims/{experiment}/exp_{num}/{id}/sim_{id}_2.fq.gz'
     params:
         sims = 'sims/{experiment}/exp_{num}/{id}'
+    benchmark:
+        'benchmark/{experiment}/exp_{num}/{id}/make_simulation/benchmark.json'
     shell:
         '{UPDATED_PATH}'
         ' {params.sims}/sim_{wildcards.id}.sh'
@@ -145,7 +159,9 @@ rule hisat_alignment:
         'sims/{experiment}/exp_{num}/{id}/sim_{id}_2.fq.gz'
     output:
         'sims/{experiment}/exp_{num}/{id}/hisat.bam'
-    threads: N_THREADS
+    threads: 20
+    benchmark:
+        'benchmark/{experiment}/exp_{num}/{id}/hisat/benchmark.json'
     shell:
         '{UPDATED_PATH}'
         ' hisat2'
@@ -170,6 +186,8 @@ rule featureCounts:
         'sims/{experiment}/exp_{num,\d+}/{id,\d+}/hisat.bam'
     output:
         'sims/{experiment}/exp_{num,\d+}/{id,\d+}/featureCounts.txt'
+    benchmark:
+        'benchmark/{experiment}/exp_{num}/{id}/featureCounts/benchmark.json'
     threads: 5
     shell:
         '{UPDATED_PATH} '
@@ -210,6 +228,8 @@ rule cuffquant:
     output:
         'sims/{experiment}/exp_{num}/{id}/cuffquant/abundances.cxb'
     threads: 7
+    benchmark:
+        'benchmark/{experiment}/exp_{num}/{id}/cuffquant/benchmark.json'
     params:
         output = 'sims/{experiment}/exp_{num}/{id}/cuffquant'
     shell:
@@ -241,6 +261,8 @@ rule cuffdiff:
         'sims/{experiment}/exp_{num,\d+}/results/cuffdiff',
         'sims/{experiment}/exp_{num}/results/cuffdiff/isoform_exp.diff',
         'sims/{experiment}/exp_{num}/results/cuffdiff/gene_exp.diff'
+    benchmark:
+        'benchmark/{experiment}/exp_{num}/cuffdiff/benchmark.json'
     threads: 3
     run:
         info = get_simulation_info(wildcards['experiment'])
@@ -271,6 +293,8 @@ rule kallisto:
         'sims/{experiment}/exp_{num}/{id}/kallisto',
         'sims/{experiment}/exp_{num}/{id}/kallisto/abundance.h5',
         'sims/{experiment}/exp_{num}/{id}/kallisto/abundance.tsv'
+    benchmark:
+        'benchmark/{experiment}/exp_{num}/{id}/kallisto/benchmark.json'
     threads:
         5
     shell:
@@ -282,3 +306,21 @@ rule kallisto:
         ' --bias'
         ' -t {threads}'
         ' {input[0]} {input[1]}'
+
+def get_sleuth(wildcards):
+    experiment = wildcards['experiment']
+    info = get_simulation_info(experiment)
+    num = wildcards['num']
+    ids = range(1, info['a'] + info['b'] + 1)
+    return expand('sims/{experiment}/exp_{num}/{id}/kallisto/abundance.h5',
+        experiment = experiment,
+        num = num,
+        id = ids)
+
+rule sleuth:
+    input:
+        get_sleuth
+    output:
+        'sims/{experiment}/exp_{num,\d+}/results/sleuth'
+    shell:
+        'touch {output}'
