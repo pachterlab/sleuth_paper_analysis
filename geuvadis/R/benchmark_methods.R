@@ -9,8 +9,9 @@ library("limma")
 library("sleuth")
 
 get_human_gene_names <- function() {
-  mart <- biomaRt::useMart(biomart = "ENSEMBL_MART_ENSEMBL", dataset = "hsapiens_gene_ensembl",
-    host="www.ensembl.org")
+  mart <- biomaRt::useMart(biomart = "ENSEMBL_MART_ENSEMBL",
+    dataset = "hsapiens_gene_ensembl",
+    host = "may2015.archive.ensembl.org")
   ttg <- biomaRt::getBM(
     attributes = c("ensembl_transcript_id", "ensembl_gene_id", "external_gene_name"),
     mart = mart)
@@ -20,7 +21,7 @@ get_human_gene_names <- function() {
   ttg
 }
 
-transcript_gene_mapping <- get_human_gene_names()
+# transcript_gene_mapping <- get_human_gene_names()
 
 #' generate `sample_to_condition` that sleuth is expecting
 #'
@@ -99,14 +100,14 @@ run_sleuth <- function(sample_info, max_bootstrap = 30, gene_mode = NULL, ...) {
 
   res <- NULL
   if (is.null(gene_mode)) {
-    # test every isoform
-    lrt <- get_gene_lift(so, 'reduced:full', test_type = 'lrt')
-    wt <- get_gene_lift(so, 'conditionB', test_type = 'wt')
-    res <- list(sleuth.lrt = lrt, sleuth.wt = wt)
-  } else if (gene_mode == 'lift') {
     lrt <- sleuth_results(so, 'reduced:full', test_type = 'lrt')[,
       c('target_id', 'pval', 'qval')]
     wt <- sleuth_results(so, 'conditionB')[, c('target_id', 'pval', 'qval')]
+    res <- list(sleuth.lrt = lrt, sleuth.wt = wt)
+  } else if (gene_mode == 'lift') {
+    # test every isoform
+    lrt <- get_gene_lift(so, 'reduced:full', test_type = 'lrt')
+    wt <- get_gene_lift(so, 'conditionB', test_type = 'wt')
     res <- list(sleuth.lrt = lrt, sleuth.wt = wt)
   } else if (gene_mode == 'aggregate') {
     stop('TODO: implement me!')
@@ -152,9 +153,6 @@ rename_target_id <- function(df, as_gene = FALSE) {
     df
   }
 }
-
-current_path <- '../sims/isoform_3_3_5_1_1/exp_1/results/cuffdiff'
-tmp <- get_cuffdiff(current_path)
 
 get_cuffdiff <- function(results_path) {
   isoform_de <- read.table(file.path(results_path, 'isoform_exp.diff'),

@@ -11,7 +11,7 @@ from os import getenv
 HOME = expanduser('~')
 BASE = HOME + '/sleuth_paper_analysis'
 
-N_THREADS = 35
+N_THREADS = 40
 
 ###
 # software

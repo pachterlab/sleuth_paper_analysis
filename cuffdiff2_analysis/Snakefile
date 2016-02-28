@@ -20,7 +20,8 @@ if isfile(META):
 rule all:
     input:
         META,
-        expand('results/paired/{id}/kallisto/abundance.h5', id = SRA_PAIRED)
+        expand('results/paired/{id}/kallisto/abundance.h5', id = SRA_PAIRED),
+        expand('results/paired/{id}/featureCounts.txt', id = SRA_PAIRED)
 
 rule metadata:
     output:
@@ -61,3 +62,44 @@ rule kallisto_paired:
         ' -t 7'
         ' -o {output[0]}'
         ' {input[0]} {input[1]}'
+
+rule hisat_alignment:
+    input:
+        'data/paired/{id}/{id}_1.fastq.gz',
+        'data/paired/{id}/{id}_2.fastq.gz'
+    output:
+        'results/paired/{id}/hisat.bam'
+    threads: 20
+    shell:
+        '{UPDATED_PATH}'
+        ' hisat2'
+        ' -x {HISAT_INDEX}'
+        ' -1 {input[0]}'
+        ' -2 {input[1]}'
+        ' --dta-cufflinks'
+        ' -p {threads}'
+        ' | '
+        '{UPDATED_PATH} samtools view -Sb -'
+        ' > '
+        '{output}.unsorted'
+        ' && '
+        '{UPDATED_PATH} samtools sort'
+        ' -o {output}'
+        ' {output}.unsorted'
+        ' && '
+        'rm {output}.unsorted'
+
+rule featureCounts:
+    input:
+        'results/paired/{id}/hisat.bam'
+    output:
+        'results/paired/{id}/featureCounts.txt'
+    threads: 5
+    shell:
+        '{UPDATED_PATH} '
+        'featureCounts '
+        ' -a {TRANSCRIPTOME_GTF}'
+        ' -o {output}'
+        ' -T {threads}'
+        ' -p'
+        ' {input}'

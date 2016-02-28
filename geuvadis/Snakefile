@@ -295,17 +295,16 @@ rule kallisto:
         'sims/{experiment}/exp_{num}/{id}/kallisto/abundance.tsv'
     benchmark:
         'benchmark/{experiment}/exp_{num}/{id}/kallisto/benchmark.json'
-    threads:
-        5
+    threads: 5
     shell:
         '{UPDATED_PATH} '
         'kallisto quant'
         ' -i {KALLISTO_INDEX}'
-        ' -b 50'
+        ' -b 100'
         ' -o {output[0]}'
-        ' --bias'
         ' -t {threads}'
         ' {input[0]} {input[1]}'
+        # ' <(zcat {input[0]}) <(zcat {input[1]})'
 
 def get_sleuth(wildcards):
     experiment = wildcards['experiment']
