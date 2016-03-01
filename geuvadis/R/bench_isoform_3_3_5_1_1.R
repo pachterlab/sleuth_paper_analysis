@@ -8,11 +8,137 @@ library("mamabear")
 # simulation specific constants
 ###
 sim_name <- 'isoform_3_3_5_1_1'
+sim_name <- 'isoform_3_3_20_1_1'
 sims_dir <- file.path('../sims', sim_name)
 base_dir <- file.path('../sims', sim_name)
 n_a <- 3
 n_b <- 3
 n <- n_a + n_b
+
+
+###
+# generalization to several simulations
+###
+
+parse_simulation <- function(sim_name) {
+  sim_name_split <- strsplit(sim_name, '_')[[1]]
+
+  res <- list()
+  res[['type']] <- sim_name_split[[1]]
+  res[['a']] <- as.integer(sim_name_split[[2]])
+  res[['b']] <- as.integer(sim_name_split[[3]])
+  res[['n']] <- as.integer(sim_name_split[[4]])
+  res[['seed']] <- as.integer(sim_name_split[[5]])
+  res[['sf']] <- as.integer(sim_name_split[[6]])
+
+  res
+}
+
+load_results <- function(sim_name, which_sample, ...) {
+  sim <- parse_simulation(sim_name)
+
+  if (which_sample > sim$n) {
+    stop('which_sample must be less than the total number of replications: ', sim$n)
+  }
+
+  which_sample <- as.integer(which_sample)
+  n <- sim$a + sim$b
+
+  sim_info <- get_de_info(sim_name, which_sample, transcript_gene_mapping)
+  de_info <- sim_info$de_info
+  de_genes <- sim_info$de_genes
+
+  kal_dirs <- file.path('..', 'sims', sim_name, paste0("exp_", which_sample),
+    1:n, "kallisto")
+  sample_to_condition <- get_sample_to_condition(sim$a, sim$b, kal_dirs)
+
+  sir <- run_sleuth(sample_to_condition, gene_mode = NULL, ...)
+
+  isoform_cds <- get_filtered_isoform_cds(sir$so, sample_to_condition)
+  sir$so <- NULL
+
+  gene_methods <- list(
+    DESeq2 = runDESeq2,
+    edgeR = runEdgeR,
+    limmaVoom = runVoom
+    # edgerRobust = runEdgeRRobust,
+    # EBSeq = runEBSeq
+    )
+  isoform_results <- lapply(gene_methods,
+    function(f) {
+      f(isoform_cds, FALSE)
+    })
+  all_results <- c(Filter(is.data.frame, sir) , isoform_results)
+
+  all_results
+}
+
+all_results <- lapply(1:5,
+  function(i) {
+    cat('Sample: ', i, '\n')
+    load_results(sim_name, i)
+  })
+
+# library('BiocParallel')
+# mcp <- MulticoreParam(workers = 6)
+transcript_gene_mapping <- get_human_gene_names()
+
+all_results_10 <- mclapply(1:20,
+  function(i) {
+    cat('Sample: ', i, '\n')
+    load_results(sim_name, i, min_reads = 10)
+  }, mc.cores = 10)
+
+all_results_10 <- lapply(1,
+  function(i) {
+    cat('Sample: ', i, '\n')
+    load_results(sim_name, i, min_reads = 10)
+  })
+
+###
+# end here for now
+###
+
+all_bench <- lapply(seq_along(all_results),
+  function(i) {
+    res <- all_results[[i]]
+    sim_info <- get_de_info(sim_name, i, transcript_gene_mapping)
+    bench <- new_de_benchmark(res, names(res), sim_info$de_info)
+    bench
+  })
+
+debugonce(average_bench_fdr)
+
+tmp <- filter(all_fdr, method == 'sleuth.lrt')
+
+# figure out why getting NAs in the sd columns
+debugonce(mamabear:::average_bench_fdr)
+all_fdr <- mamabear:::average_bench_fdr(all_bench)
+
+fdr_efdr_plot(all_bench)
+
+fdr_nde_plot(all_bench) +
+  xlim(0, 3000) +
+  ylim(0, 0.10) +
+  theme_cowplot(25) +
+  theme(legend.position = c(0.15, 0.80))
+
+ggplot(all_fdr, aes(nde, mean_tFDR)) +
+  geom_line(aes(color = method, linetype = method)) +
+  xlim(0, 3000) +
+  ylim(0, 0.10)
+
+fdr_nde_plot(all_bench[[1]], FALSE) +
+  xlim(0, 3000) +
+  ylim(0, 0.10) +
+  theme_cowplot(25) +
+  theme(legend.position = c(0.15, 0.80)) +
+  xlab('number of isoforms called DE') +
+  ylab('FDR')
+
+###
+# more constants
+###
 
 sim_info <- get_de_info(sim_name, 1, transcript_gene_mapping)
 de_info <- sim_info$de_info
@@ -22,6 +148,56 @@ kal_dirs <- file.path(base_dir, "exp_1", 1:n, "kallisto")
 sample_to_condition <- get_sample_to_condition(n_a, n_b, kal_dirs)
 
 cr <- get_cuffdiff(file.path(base_dir, 'exp_1', 'results', 'cuffdiff'))
+
+###
+# try to estimate the best filtering
+###
+library('parallel')
+minimum_reads <- c(0, 1, 3, 5, 10, 20)
+filter_sleuth <- mclapply(minimum_reads,
+  function(mr) {
+    res <- run_sleuth(sample_to_condition, min_reads = mr)
+    res$so <- NULL
+    res
+  },
+  mc.cores = length(minimum_reads),
+  mc.preschedule = FALSE)
+
+saveRDS(filter_sleuth, file = '../results/filter_sleuth.rds')
+
+filter_sleuth <- readRDS('../results/filter_sleuth.rds')
+
+# trying to generalize the fdr
+
+
+all_bench <- lapply(seq_along(filter_sleuth),
+  function(i) {
+    tmp <- filter_sleuth[[i]]$sleuth.lrt
+    filter_sleuth[[i]]$sleuth.lrt <- tmp[complete.cases(tmp), ]
+
+    tmp <- filter_sleuth[[i]]$sleuth.wt
+    filter_sleuth[[i]]$sleuth.wt <- tmp[complete.cases(tmp), ]
+
+    new_de_benchmark(filter_sleuth[[i]],
+      paste0(names(filter_sleuth[[i]]), ' ', minimum_reads[i]),
+      de_info)
+  })
+
+tmp <- mamabear:::calculate_fdr(all_bench[[1]])
+
+
+fdr_plots <- lapply(all_bench,
+  function(bench) {
+    fdr_nde_plot(bench, FALSE) +
+      xlim(0, 3000) +
+      ylim(0, 0.10) +
+      theme_cowplot(25) +
+      theme(legend.position = c(0.15, 0.80)) +
+      xlab('number of isoforms called DE') +
+      ylab('FDR')
+  })
+
+plot_grid(plotlist = fdr_plots, nrow = 2)
 
 ###
 # run the isoform analysis

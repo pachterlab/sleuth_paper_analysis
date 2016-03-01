@@ -11,7 +11,8 @@ library("sleuth")
 get_human_gene_names <- function() {
   mart <- biomaRt::useMart(biomart = "ENSEMBL_MART_ENSEMBL",
     dataset = "hsapiens_gene_ensembl",
-    host = "may2015.archive.ensembl.org")
+    # host = "may2015.archive.ensembl.org")
+    host = "ensembl.org")
   ttg <- biomaRt::getBM(
     attributes = c("ensembl_transcript_id", "ensembl_gene_id", "external_gene_name"),
     mart = mart)
@@ -92,7 +93,10 @@ run_sleuth_prep <- function(sample_info, max_bootstrap = 30, ...) {
 #
 
 #' @param gene_mode if NULL, do isoform mode, if 'lift' do gene lifting, if 'aggregate', do gene aggregation
-run_sleuth <- function(sample_info, max_bootstrap = 30, gene_mode = NULL, ...) {
+run_sleuth <- function(sample_info,
+  # max_bootstrap = 30,
+  gene_mode = NULL,
+  ...) {
   so <- run_sleuth_prep(sample_info, max_bootstrap = max_bootstrap, ...)
   so <- sleuth_wt(so, 'conditionB')
   so <- sleuth_fit(so, ~ 1, 'reduced')

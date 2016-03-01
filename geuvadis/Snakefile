@@ -92,9 +92,9 @@ rule all:
         #     n = range(1, 7)),
         # 'sims/isoform_3_3_5_1_1/exp_1/results/featureCounts/counts.tsv',
         expand('sims/isoform_3_3_20_1_1/exp_{n}/results/sleuth',
+            n = range(1, 20 + 1)),
+        expand('sims/isoform_3_3_20_1_1/exp_{n}/results/cuffdiff/isoform_exp.diff',
             n = range(1, 20 + 1))
-        # expand('sims/isoform_3_3_20_1_1/exp_{n}/results/cuffdiff/isoform_exp.diff',
-        #     n = range(1, 20 + 1))
 
         # isoform_simulations[0:5],
         # isoform_reads[0:5]
