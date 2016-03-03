@@ -94,7 +94,7 @@ run_sleuth_prep <- function(sample_info, max_bootstrap = 30, ...) {
 
 #' @param gene_mode if NULL, do isoform mode, if 'lift' do gene lifting, if 'aggregate', do gene aggregation
 run_sleuth <- function(sample_info,
-  # max_bootstrap = 30,
+  max_bootstrap = 30,
   gene_mode = NULL,
   ...) {
   so <- run_sleuth_prep(sample_info, max_bootstrap = max_bootstrap, ...)
@@ -124,12 +124,15 @@ run_sleuth <- function(sample_info,
   res
 }
 
-get_filtered_isoform_cds <- function(so, stc) {
+# if method_filtering is false, then use the sleuth filter
+get_filtered_isoform_cds <- function(so, stc, method_filtering = FALSE) {
   pass_filt_names <- so$filter_df[['target_id']]
 
   obs_raw <- sleuth:::spread_abundance_by(so$obs_raw, "est_counts")
-  counts_filtered <- obs_raw[pass_filt_names,]
-  isoform_cds <- make_count_data_set(round(counts_filtered), stc)
+  if (!method_filtering) {
+    obs_raw <- obs_raw[pass_filt_names,]
+  }
+  isoform_cds <- make_count_data_set(round(obs_raw), stc)
 
   isoform_cds
 }
@@ -186,8 +189,13 @@ get_cuffdiff <- function(results_path) {
 
 # The code below is a slightly modified version of the code from `DESeq2paper`
 # http://www-huber.embl.de/DESeq2paper/
-runDESeq2 <- function(e, as_gene = TRUE) {
+runDESeq2 <- function(e, as_gene = TRUE, compute_filter = FALSE) {
   dds <- DESeqDataSetFromMatrix(exprs(e), DataFrame(pData(e)), ~ condition)
+  if (compute_filter) {
+    # Section 1.3.6 in DESeq2 vignette
+    # https://www.bioconductor.org/packages/3.3/bioc/vignettes/DESeq2/inst/doc/DESeq2.pdf
+    dds <- dds[ rowSums(counts(dds)) > 1, ]
+  }
   dds <- DESeq(dds,quiet=TRUE)
   res <- results(dds)
   beta <- res$log2FoldChange
@@ -204,17 +212,27 @@ runDESeq2 <- function(e, as_gene = TRUE) {
     as_gene = as_gene)
 }
 
-runEdgeR <- function(e, as_gene = TRUE) {
+runEdgeR <- function(e, as_gene = TRUE, compute_filter = FALSE) {
+
+
   design <- model.matrix(~ pData(e)$condition)
   dgel <- DGEList(exprs(e))
+  if (compute_filter) {
+    # Section 2.6 in edgeR vignette
+    # https://www.bioconductor.org/packages/3.3/bioc/vignettes/edgeR/inst/doc/edgeRUsersGuide.pdf
+    keep <- rowSums(cpm(dgel) > 1) >= 2
+    dgel <- dgel[keep, , keep.lib.sizes=FALSE]
+  }
   dgel <- calcNormFactors(dgel)
   dgel <- estimateGLMCommonDisp(dgel, design)
   dgel <- estimateGLMTrendedDisp(dgel, design)
   dgel <- estimateGLMTagwiseDisp(dgel, design)
   edger.fit <- glmFit(dgel, design)
   edger.lrt <- glmLRT(edger.fit)
-  predbeta <- predFC(exprs(e), design, offset=getOffset(dgel), dispersion=dgel$tagwise.dispersion)
-  predbeta10 <- predFC(exprs(e), design, prior.count=10, offset=getOffset(dgel), dispersion=dgel$tagwise.dispersion)
+  # predbeta <- predFC(exprs(e), design, offset=getOffset(dgel), dispersion=dgel$tagwise.dispersion)
+  # predbeta10 <- predFC(exprs(e), design, prior.count=10, offset=getOffset(dgel), dispersion=dgel$tagwise.dispersion)
+  predbeta <- predFC(dgel$counts, design, offset=getOffset(dgel), dispersion=dgel$tagwise.dispersion)
+  predbeta10 <- predFC(dgel$counts, design, prior.count=10, offset=getOffset(dgel), dispersion=dgel$tagwise.dispersion)
   pvals <- edger.lrt$table$PValue
   # pvals[rowSums(exprs(e)) == 0] <- NA
   padj <- p.adjust(pvals,method="BH")
@@ -258,7 +276,7 @@ runEdgeRRobust <- function(e, as_gene = TRUE) {
     as_gene = as_gene)
 }
 
-runVoom <- function(e, as_gene = TRUE) {
+runVoom <- function(e, as_gene = TRUE, method_filtering = FALSE) {
   design <- model.matrix(~ condition, pData(e))
   dgel <- DGEList(exprs(e))
   dgel <- calcNormFactors(dgel)
@@ -279,7 +297,7 @@ runVoom <- function(e, as_gene = TRUE) {
   as_gene = as_gene)
 }
 
-runEBSeq <- function(e, as_gene = TRUE) {
+runEBSeq <- function(e, as_gene = TRUE, method_filtering = FALSE) {
   sizes <- MedianNorm(exprs(e))
   out <- capture.output({
     suppressMessages({

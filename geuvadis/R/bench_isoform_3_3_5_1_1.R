@@ -34,7 +34,31 @@ parse_simulation <- function(sim_name) {
   res
 }
 
-load_results <- function(sim_name, which_sample, ...) {
+compare_reference <- function(results_list, de_info,
+  reference = c('sleuth.wt', 'sleuth.lrt')) {
+
+  other_methods <- names(results_list)[!(names(results_list) %in% reference)]
+  if (length(other_methods) == 0) {
+    stop('No other methods (or missing names) in results_list')
+  }
+
+  res <- lapply(other_methods,
+    function(m) {
+      ms <- c(reference, m)
+      new_de_benchmark(results_list[ms], ms, de_info)
+    })
+  names(res) <- other_methods
+
+  res
+}
+
+# @param sim_name a simulation name such as 'isoform_3_3_20_1_1'
+# @param which_sample which sample (replication) to load (an integer from 1 to N)
+# @param method_filtering if \code{TRUE}, use the methods own filtering.
+# Otherwise, use the filtering provided from sleuth.
+# NOTE: cuffdiff uses a filter method internally and it cannot be changed
+load_results <- function(sim_name, which_sample, method_filtering = FALSE,
+  ...) {
   sim <- parse_simulation(sim_name)
 
   if (which_sample > sim$n) {
@@ -54,7 +78,8 @@ load_results <- function(sim_name, which_sample, ...) {
 
   sir <- run_sleuth(sample_to_condition, gene_mode = NULL, ...)
 
-  isoform_cds <- get_filtered_isoform_cds(sir$so, sample_to_condition)
+  isoform_cds <- get_filtered_isoform_cds(sir$so, sample_to_condition,
+    method_filtering)
   sir$so <- NULL
 
   gene_methods <- list(
@@ -66,13 +91,14 @@ load_results <- function(sim_name, which_sample, ...) {
     )
   isoform_results <- lapply(gene_methods,
     function(f) {
-      f(isoform_cds, FALSE)
+      f(isoform_cds, FALSE, method_filtering)
     })
   all_results <- c(Filter(is.data.frame, sir) , isoform_results)
 
   all_results
 }
 
+debugonce(load_results)
 all_results <- lapply(1:5,
   function(i) {
     cat('Sample: ', i, '\n')
@@ -89,11 +115,138 @@ all_results_10 <- mclapply(1:20,
     load_results(sim_name, i, min_reads = 10)
   }, mc.cores = 10)
 
-all_results_10 <- lapply(1,
+saveRDS(all_results_10, file = '../sims/isoform_3_3_20_1_1/tmp.rds')
+all_results_10 <- readRDS('../sims/isoform_3_3_20_1_1/tmp.rds')
+
+all_results_10_filter <- mclapply(1:20,
   function(i) {
     cat('Sample: ', i, '\n')
-    load_results(sim_name, i, min_reads = 10)
+    load_results(sim_name, i, method_filtering = TRUE, min_reads = 10)
+  }, mc.cores = 10)
+saveRDS(all_results_10_filter, file = '../sims/isoform_3_3_20_1_1/all_results_10_filter.rds')
+all_results_10_filter <- readRDS('../sims/isoform_3_3_20_1_1/all_results_10_filter.rds')
+
+all_bench_10 <- lapply(seq_along(all_results_10),
+  function(i) {
+    res <- all_results_10[[i]]
+    sim_info <- get_de_info(sim_name, i, transcript_gene_mapping)
+    bench <- new_de_benchmark(res, names(res), sim_info$de_info)
+    bench
   })
+
+fdr_nde_plot(all_bench_10) +
+  xlim(0, 3000) +
+  ylim(0, 0.10) +
+  theme_cowplot(25) +
+  theme(legend.position = c(0.15, 0.80))
+
+all_results_5 <- mclapply(1:20,
+  function(i) {
+    cat('Sample: ', i, '\n')
+    load_results(sim_name, i, min_reads = 5)
+  }, mc.cores = 10)
+
+saveRDS(all_results_5, file = '../sims/isoform_3_3_20_1_1/5.rds')
+all_results_5 <- readRDS('../sims/isoform_3_3_20_1_1/5.rds')
+
+all_bench_10_filter <- lapply(seq_along(all_results_10_filter),
+  function(i) {
+    res <- all_results_10_filter[[i]]
+    sim_info <- get_de_info(sim_name, i, transcript_gene_mapping)
+    bench <- new_de_benchmark(res, names(res), sim_info$de_info)
+    bench
+  })
+
+all_bench_10_filter <- lapply(seq_along(all_results_10_filter),
+  function(i) {
+    res <- all_results_10_filter[[i]]
+    sim_info <- get_de_info(sim_name, i, transcript_gene_mapping)
+
+    # bench <- new_de_benchmark(res, names(res), sim_info$de_info)
+    bench <- compare_reference(res, sim_info$de_info,
+      c('sleuth.wt', 'sleuth.lrt'))
+    bench
+  })
+
+all_bench_10_filter_pairwise <- Map(function(m) {
+    lapply(all_bench_10_filter, function(x) x[[m]])
+  },
+  c('DESeq2', 'edgeR', 'limmaVoom'))
+
+p <- lapply(all_bench_10_filter_pairwise,
+  function(x) {
+    fdr_nde_plot(x) +
+      xlim(0, 3000) +
+      ylim(0, 0.10) +
+      theme_cowplot(25) +
+      theme(legend.position = c(0.15, 0.80))
+  })
+
+plot_grid(plotlist = p)
+
+fdr_nde_plot(all_bench_10_filter) +
+  xlim(0, 3000) +
+  ylim(0, 0.10) +
+  theme_cowplot(25) +
+  theme(legend.position = c(0.15, 0.80))
+
+###
+# pairwise comparison filtering at 5
+###
+
+all_results_5_filter <- mclapply(1:20,
+  function(i) {
+    cat('Sample: ', i, '\n')
+    load_results(sim_name, i, method_filtering = TRUE, min_reads = 5, min_prop = 0.3)
+  }, mc.cores = 20)
+saveRDS(all_results_5_filter, file = '../sims/isoform_3_3_20_1_1/all_results_5_filter.rds')
+
+all_results_5_filter <- readRDS('../sims/isoform_3_3_20_1_1/all_results_5_filter.rds')
+all_bench_5_filter <- lapply(seq_along(all_results_5_filter),
+  function(i) {
+    res <- all_results_5_filter[[i]]
+    sim_info <- get_de_info(sim_name, i, transcript_gene_mapping)
+
+    # bench <- new_de_benchmark(res, names(res), sim_info$de_info)
+    bench <- compare_reference(res, sim_info$de_info,
+      c('sleuth.wt', 'sleuth.lrt'))
+    bench
+  })
+
+all_bench_5_filter_pairwise <- Map(function(m) {
+    lapply(all_bench_5_filter, function(x) x[[m]])
+  },
+  c('DESeq2', 'edgeR', 'limmaVoom'))
+
+p <- lapply(all_bench_5_filter_pairwise,
+  function(x) {
+    fdr_nde_plot(x) +
+      xlim(0, 3000) +
+      ylim(0, 0.10) +
+      theme_cowplot(25) +
+      theme(legend.position = c(0.15, 0.80))
+  })
+
+plot_grid(plotlist = p)
+# all_results_10 <- lapply(1,
+#   function(i) {
+#     cat('Sample: ', i, '\n')
+#     load_results(sim_name, i, min_reads = 10)
+#   })
+
+all_bench_5 <- lapply(seq_along(all_results_5),
+  function(i) {
+    res <- all_results_5[[i]]
+    sim_info <- get_de_info(sim_name, i, transcript_gene_mapping)
+    bench <- new_de_benchmark(res, names(res), sim_info$de_info)
+    bench
+  })
+
+fdr_nde_plot(all_bench_5) +
+  xlim(0, 3000) +
+  ylim(0, 0.10) +
+  theme_cowplot(25) +
+  theme(legend.position = c(0.15, 0.80))
 
 ###
 # end here for now
@@ -198,6 +351,21 @@ fdr_plots <- lapply(all_bench,
   })
 
 plot_grid(plotlist = fdr_plots, nrow = 2)
+
+##################################################
+# testing
+
+so <- sgr$so
+rownames(so$sample_to_covariates) <- so$sample_to_variance$sample
+sample_to_condition <- get_sample_to_condition(3, 3, 'hello')
+tmp <- get_filtered_isoform_cds(so, so$sample_to_covariates)
+tmp <- get_filtered_isoform_cds(so, sample_to_condition)
+
+
+
+
+##################################################
+
 
 ###
 # run the isoform analysis
