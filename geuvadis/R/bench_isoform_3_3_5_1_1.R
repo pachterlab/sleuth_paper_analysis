@@ -20,83 +20,8 @@ n <- n_a + n_b
 # generalization to several simulations
 ###
 
-parse_simulation <- function(sim_name) {
-  sim_name_split <- strsplit(sim_name, '_')[[1]]
 
-  res <- list()
-  res[['type']] <- sim_name_split[[1]]
-  res[['a']] <- as.integer(sim_name_split[[2]])
-  res[['b']] <- as.integer(sim_name_split[[3]])
-  res[['n']] <- as.integer(sim_name_split[[4]])
-  res[['seed']] <- as.integer(sim_name_split[[5]])
-  res[['sf']] <- as.integer(sim_name_split[[6]])
 
-  res
-}
-
-compare_reference <- function(results_list, de_info,
-  reference = c('sleuth.wt', 'sleuth.lrt')) {
-
-  other_methods <- names(results_list)[!(names(results_list) %in% reference)]
-  if (length(other_methods) == 0) {
-    stop('No other methods (or missing names) in results_list')
-  }
-
-  res <- lapply(other_methods,
-    function(m) {
-      ms <- c(reference, m)
-      new_de_benchmark(results_list[ms], ms, de_info)
-    })
-  names(res) <- other_methods
-
-  res
-}
-
-# @param sim_name a simulation name such as 'isoform_3_3_20_1_1'
-# @param which_sample which sample (replication) to load (an integer from 1 to N)
-# @param method_filtering if \code{TRUE}, use the methods own filtering.
-# Otherwise, use the filtering provided from sleuth.
-# NOTE: cuffdiff uses a filter method internally and it cannot be changed
-load_results <- function(sim_name, which_sample, method_filtering = FALSE,
-  ...) {
-  sim <- parse_simulation(sim_name)
-
-  if (which_sample > sim$n) {
-    stop('which_sample must be less than the total number of replications: ', sim$n)
-  }
-
-  which_sample <- as.integer(which_sample)
-  n <- sim$a + sim$b
-
-  sim_info <- get_de_info(sim_name, which_sample, transcript_gene_mapping)
-  de_info <- sim_info$de_info
-  de_genes <- sim_info$de_genes
-
-  kal_dirs <- file.path('..', 'sims', sim_name, paste0("exp_", which_sample),
-    1:n, "kallisto")
-  sample_to_condition <- get_sample_to_condition(sim$a, sim$b, kal_dirs)
-
-  sir <- run_sleuth(sample_to_condition, gene_mode = NULL, ...)
-
-  isoform_cds <- get_filtered_isoform_cds(sir$so, sample_to_condition,
-    method_filtering)
-  sir$so <- NULL
-
-  gene_methods <- list(
-    DESeq2 = runDESeq2,
-    edgeR = runEdgeR,
-    limmaVoom = runVoom
-    # edgerRobust = runEdgeRRobust,
-    # EBSeq = runEBSeq
-    )
-  isoform_results <- lapply(gene_methods,
-    function(f) {
-      f(isoform_cds, FALSE, method_filtering)
-    })
-  all_results <- c(Filter(is.data.frame, sir) , isoform_results)
-
-  all_results
-}
 
 debugonce(load_results)
 all_results <- lapply(1:5,
@@ -148,6 +73,16 @@ all_results_5 <- mclapply(1:20,
 
 saveRDS(all_results_5, file = '../sims/isoform_3_3_20_1_1/5.rds')
 all_results_5 <- readRDS('../sims/isoform_3_3_20_1_1/5.rds')
+
+cr_5 <- lapply(1:20,
+  function(i) {
+      get_cuffdiff(file.path(base_dir, paste0('exp_', i), 'results', 'cuffdiff'))[['isoform']]
+  })
+
+all_results_5_filter <- lapply(seq_along(all_results_5_filter),
+  function(i) {
+    c(list('Cuffdiff2' = cr_5[[i]]), all_results_5_filter[[i]])
+    })
 
 all_bench_10_filter <- lapply(seq_along(all_results_10_filter),
   function(i) {
@@ -217,6 +152,7 @@ all_bench_5_filter_pairwise <- Map(function(m) {
     lapply(all_bench_5_filter, function(x) x[[m]])
   },
   c('DESeq2', 'edgeR', 'limmaVoom'))
+  # c('DESeq2', 'edgeR', 'limmaVoom', 'Cuffdiff2'))
 
 p <- lapply(all_bench_5_filter_pairwise,
   function(x) {
