@@ -69,29 +69,42 @@ sf_mode_1 <- function(n) {
 
 # random size factors such that the geometric mean is 1
 sf_mode_2 <- function(n) {
-  nsamp <- 0
-  res <- numeric(n)
+  res <- rep.int(1L, n)
 
-  while (nsamp < n) {
-    if ( (n - nsamp) == 1 ) {
-      nsamp <- nsamp + 1
-      res[nsamp] <- 1
-    } else {
-      eq <- sample(c(TRUE, FALSE), 1)
-      if (eq) {
+  done <- FALSE
+
+  while (all(res == 1L)) {
+    nsamp <- 0
+    while (nsamp < n) {
+      if ( (n - nsamp) == 1 ) {
         nsamp <- nsamp + 1
         res[nsamp] <- 1
       } else {
-        nsamp <- nsamp + 1
-        res[nsamp] <- 1 / 3
-        nsamp <- nsamp + 1
-        res[nsamp] <- 3
+        eq <- sample(c(TRUE, FALSE), 1)
+        if (eq) {
+          nsamp <- nsamp + 1
+          res[nsamp] <- 1
+        } else {
+          nsamp <- nsamp + 1
+          res[nsamp] <- 1 / 3
+          nsamp <- nsamp + 1
+          res[nsamp] <- 3
+        }
       }
     }
   }
 
+
   res[sample.int(length(res))]
 }
+
+set.seed(3)
+
+tmp <- sapply(1:100,
+  function(x) {
+    sf_mode_2(n = 6)
+  }) %>% t
+tmp[sapply(1:nrow(tmp), function(i) all(tmp[i, ] == 1))]
 
 #' Simulate counts from a negative binomial
 #'
@@ -192,7 +205,8 @@ simulate_gene_counts <- function(prep_df,
   log_fc = 1,
   log_fc_sd = NA,
   sim_function = make_sim,
-  size_factors = rep(1, n_a + n_b),
+  # size_factors = rep(1, n_a + n_b),
+  size_factor_function = sf_mode_1,
   generate_fold_changes = gene_fold_change
   ) {
   stopifnot( is(prep_df, "data.frame") )
@@ -211,50 +225,70 @@ simulate_gene_counts <- function(prep_df,
   n_genes <- length(gene_names)
   n_de <- ceiling(prop_de * n_genes)
 
+  n_samples <- n_a + n_b
+
   condition <- factor(c(rep("A", n_a), rep("B", n_b)))
   X <- model.matrix(~ condition)
 
-  # select the genes to be differentially expressed and choose their fold change
-  which_de <- sample(gene_names, n_de, replace = FALSE)
-
-  # for now, do a fixed fold change like the DESeq2 paper
-  which_de <- data.frame(gene_name = which_de, log_fc = log_fc, is_de = TRUE)
-  data.table::setnames(which_de, "gene_name", gene_label)
-
-  prep_df <- dplyr::left_join(prep_df, which_de, by = gene_label)
-  # prep_df <- dplyr::mutate(prep_df,
-  #   log_fc = ifelse(is.na(log_fc), 0, log_fc),
-  #   is_de = ifelse(is.na(is_de), FALSE, is_de)
-  # )
-  prep_df <- dplyr::mutate(prep_df,
-    is_de = ifelse(is.na(is_de), FALSE, is_de)
-  )
-
-  # instead of complicating our lives with another join, generate fold changes for everything
-  prep_df <- generate_fold_changes(prep_df)
-
-  # clean out the old fold changes
-  prep_df <- dplyr::mutate(prep_df,
-    log_fc = ifelse(is_de, log_fc, 0))
+  # prep_df_init is a template that should be copied at the beginning of every
+  # iteration
+  prep_df_init <- prep_df
 
   sim <- lapply(1:n_sim,
     function(i) {
+      prep_df <- prep_df_init
+
+      # select the genes to be differentially expressed and choose their fold change
+      which_de <- sample(gene_names, n_de, replace = FALSE)
+
+      # this will initialize everything to `log_fc`, but will get overwritten
+      # `generate_fold_changes()` below
+      which_de <- data.frame(gene_name = which_de, log_fc = log_fc, is_de = TRUE,
+        stringsAsFactors = FALSE)
+      data.table::setnames(which_de, "gene_name", gene_label)
+
+      prep_df <- dplyr::left_join(prep_df, which_de, by = gene_label)
+      # prep_df <- dplyr::mutate(prep_df,
+      #   log_fc = ifelse(is.na(log_fc), 0, log_fc),
+      #   is_de = ifelse(is.na(is_de), FALSE, is_de)
+      # )
+      prep_df <- dplyr::mutate(prep_df,
+      is_de = ifelse(is.na(is_de), FALSE, is_de)
+      )
+
+      # instead of complicating our lives with another join, generate fold changes for everything
+      prep_df <- generate_fold_changes(prep_df)
+
+      size_factors <- size_factor_function(n_samples)
+      message(paste0("size factors: ", paste(size_factors, collapse = ' ')))
+
+      # clean out the old fold changes
+      prep_df <- dplyr::mutate(prep_df,
+        log_fc = ifelse(is_de, log_fc, 0))
       s <- sim_function(prep_df, X, size_factors = size_factors)
       colnames(s)
       colnames(s) <- paste0(condition, c(1:n_a, 1:n_b))
       rownames(s) <- prep_df$target_id
-      s
+      list(counts = s, info = prep_df, condition = condition,
+        size_factors = size_factors)
     })
 
-  list(counts = sim, info = prep_df, condition = condition,
-    size_factors = size_factors)
+  #
+  # sim <- lapply(1:n_sim,
+  #   function(i) {
+  #
+  #   })
+  #
+  # list(counts = sim, info = prep_df, condition = condition,
+  #   size_factors = size_factors)
+  sim
 }
 # debugonce(simulate_counts)
 # debugonce(make_sim)
 
 gene_fold_change <- function(df) {
-  df <- group_by(df, ens_gene)
-  mutate(df, log_fc = gfc_same_direction(length(ens_gene)))
+  df <- dplyr::group_by(df, ens_gene)
+  dplyr::mutate(df, log_fc = gfc_same_direction(length(ens_gene)))
 }
 
 #' Generate gene fold counts in the same direction

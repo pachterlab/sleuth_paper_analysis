@@ -15,58 +15,28 @@ sf_type <- as.integer(args[6])
 log_fc <- as.integer(args[7])
 
 # temporary
-# sim_name <- 'tmp'
-# n_sim <- 1L
-# n_a <- 3L
-# n_b <- 3L
-# seed <- 1
-# sf_type <- 2
-# log_fc <- 1
+sim_name <- 'tmp'
+n_sim <- 10L
+n_a <- 3L
+n_b <- 3L
+seed <- 1
+sf_type <- 2
+log_fc <- 1
 # end temporary
 
 n_total <- n_a + n_b
-
-sf_mode_1 <- function(n) {
-  rep.int(1, n)
-}
-
-sf_mode_2 <- function(n) {
-  nsamp <- 0
-  res <- numeric(n)
-
-  while (nsamp < n) {
-    if ( (n - nsamp) == 1 ) {
-      nsamp <- nsamp + 1
-      res[nsamp] <- 1
-    } else {
-      eq <- sample(c(TRUE, FALSE), 1)
-      if (eq) {
-        nsamp <- nsamp + 1
-        res[nsamp] <- 1
-      } else {
-        nsamp <- nsamp + 1
-        res[nsamp] <- 1 / 3
-        nsamp <- nsamp + 1
-        res[nsamp] <- 3
-      }
-    }
-  }
-
-  res[sample.int(length(res))]
-}
-
-set.seed(seed)
-sfs <- switch(sf_type,
-  sf_mode_1(n_total),
-  sf_mode_2(n_total)
-  )
-
 
 sim_base <- '../sims'
 sim_out <- file.path(sim_base, sim_name)
 
 source("../../simulation_core/R/simulate_de.R")
 source("../../simulation_core/R/sim_to_rsem.R")
+
+set.seed(seed)
+sf_function <- switch(sf_type,
+  sf_mode_1,
+  sf_mode_2
+  )
 
 load("../results/prep_fin.RData", verbose = TRUE)
 
@@ -97,8 +67,7 @@ sim <- simulate_gene_counts(prep_fin,
   seed = seed,
   log_fc = log_fc,
   # log_fc_sd = 1,
-  size_factors = sfs)
-message(paste0('Size factors: ', sfs))
+  size_factor_function = sf_function)
 
 # # verify that `gene_fold_change` correctly assigns the fold change
 # filtered <- sim$info %>%
@@ -121,22 +90,21 @@ rsem_res <- read.table(rsem_fhandle, header = TRUE, stringsAsFactors = FALSE)
 dir.create(sim_out, showWarnings = FALSE, recursive = TRUE)
 cat("sim_out: ", sim_out, "\n")
 
-cat("Writing out DE information\n")
-de_handle <- gzfile(file.path(sim_out, "de_info.tsv.gz"), open = "w")
-write.table(sim$info,
-  file = de_handle,
-  sep = '\t',
-  row.names = FALSE,
-  quote = FALSE,
-  col.names = TRUE)
-close(de_handle)
-
 saveRDS(sim, file.path(sim_out, 'sim.rds'))
 
-invisible(lapply(seq_along(sim$counts),
+maximum_seed <- as.integer(2 ^ 16) - 2
+seeds <- sample.int(maximum_seed, length(sim))
+
+invisible(lapply(seq_along(sim),
   function(i) {
     cat("Writing simulation ", i, "\n")
-    invisible(counts_to_simulation(sim$counts[[i]], sim$info, rsem_res,
-      file.path(sim_out, paste0("exp_", i))))
+    cur_dir <- file.path(sim_out, paste0('exp_', i))
+    invisible(counts_to_simulation(
+      sim[[i]]$counts,
+      sim[[i]]$info,
+      rsem_res,
+      seeds[i],
+      cur_dir
+      ))
     NULL
   }))
