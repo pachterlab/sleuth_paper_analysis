@@ -1,8 +1,8 @@
 get_human_gene_names <- function() {
   mart <- biomaRt::useMart(biomart = "ENSEMBL_MART_ENSEMBL",
     dataset = "hsapiens_gene_ensembl",
-    # host = "may2015.archive.ensembl.org")
-    host = "ensembl.org")
+    host = "may2015.archive.ensembl.org")
+    # host = "ensembl.org")
   ttg <- biomaRt::getBM(
     attributes = c("ensembl_transcript_id", "ensembl_gene_id", "external_gene_name"),
     mart = mart)

@@ -95,10 +95,15 @@ rule all:
             n = range(1, 20 + 1)),
         expand('sims/isoform_3_3_20_1_1/exp_{n}/results/cuffdiff/isoform_exp.diff',
             n = range(1, 20 + 1)),
+        expand('sims/isoform_3_3_20_1_1/exp_{n}/results/featureCounts/counts.tsv',
+            n = range(1, 20 + 1)),
 
         # 'sims/gcd_3_3_20_1_2/sims.rds'
         expand('sims/gcd_3_3_20_1_2/exp_{n}/results/sleuth',
+            n = range(1, 20 + 1)),
+        expand('sims/gcd_3_3_20_1_2/exp_{n}/results/featureCounts/counts.tsv',
             n = range(1, 20 + 1))
+
         # isoform_simulations[0:5],
         # isoform_reads[0:5]
 
@@ -139,6 +144,10 @@ rule gen_sim_script_isoform:
         ' {wildcards.seed}'
         ' {wildcards.sf}'
 
+# this simulation deals with the "best case" scenario when doing union counting.
+# the simulation is performed by selecting a set of genes to be differentially expressed,
+# then making every single transcript within that gene differentially expressed.
+# the isoforms within a differentially expressed gene are then all moving in the same direction
 rule gen_sim_script_geneCommonDirection:
     input:
         'results/prep_fin.RData'

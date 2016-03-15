@@ -13,7 +13,11 @@ get_de_info <- function(sim_name, sim_number, ttg) {
   all_sim <- readRDS(file.path(sims_dir, 'sims.rds'))
   de_info <- all_sim[[sim_number]]$info
 
-  tmp <- dplyr::inner_join(de_info, ttg, by = 'target_id')
+  if (length(grep("_gene", colnames(de_info))) > 0) {
+    tmp <- de_info
+  } else {
+    tmp <- dplyr::inner_join(de_info, ttg, by = 'target_id')
+  }
 
   de_genes <- dplyr::select(tmp, ens_gene, is_de)
   de_genes <- dplyr::group_by(de_genes, ens_gene)
@@ -56,6 +60,7 @@ get_de_info_old <- function(sim_name, ttg) {
   list(de_info = de_info, de_genes = de_genes)
 }
 
+#' DEPRECATED: use `load_union_counts` below
 #' Get gene counts from featureCounts
 #'
 #' Assumes \code{featureCounts} has been run and the results are in the appropriate place.
@@ -71,6 +76,28 @@ get_gene_counts <- function(sim_name, sim_num = 1) {
     header = TRUE, stringsAsFactors = FALSE, row.names = 1)
   counts <- as.matrix(counts)
   colnames(counts) <- sub('X', 'sample_', colnames(counts))
+
+  counts
+}
+
+#' Get gene counts from featureCounts
+#'
+#' Assumes \code{featureCounts} has been run and the results are in the appropriate place.
+#'
+#' @param sim_info a `sim_info` object resulting from `parse_simulation`
+#' @param which_sample the integer number of the simulation (with respect to \code{sim_info$name})
+#' @return a matrix containing gene counts
+load_union_counts <- function(sim_info, which_sample) {
+  which_sample <- as.character(as.integer(which_sample))
+  path <- file.path('..', 'sims', sim_info$name, paste0('exp_', which_sample),
+    'results', 'featureCounts', 'counts.tsv')
+
+  counts <- data.table::fread(path, sep = '\t', data.table = FALSE, header = TRUE)
+  rownames(counts) <- counts$gene_id
+  counts$gene_id <- NULL
+  setnames(counts, paste0('sample_', colnames(counts)))
+  colnames(counts) <- sub('X', 'sample_', colnames(counts))
+  counts <- as.matrix(counts)
 
   counts
 }

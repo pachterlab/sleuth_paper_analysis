@@ -1,6 +1,8 @@
 # This file contains functions to run several different differential expression
 # methods, usually simply by providing the "count matrix"
 
+library("data.table")
+
 library("Biobase")
 library("DESeq2")
 library("EBSeq")
@@ -11,8 +13,8 @@ library("sleuth")
 get_human_gene_names <- function() {
   mart <- biomaRt::useMart(biomart = "ENSEMBL_MART_ENSEMBL",
     dataset = "hsapiens_gene_ensembl",
-    # host = "may2015.archive.ensembl.org")
-    host = "ensembl.org")
+    host = "may2015.archive.ensembl.org")
+    # host = "ensembl.org")
   ttg <- biomaRt::getBM(
     attributes = c("ensembl_transcript_id", "ensembl_gene_id", "external_gene_name"),
     mart = mart)
@@ -37,6 +39,7 @@ parse_simulation <- function(sim_name) {
   res[['n']] <- as.integer(sim_name_split[[4]])
   res[['seed']] <- as.integer(sim_name_split[[5]])
   res[['sf']] <- as.integer(sim_name_split[[6]])
+  res[['name']] <- sim_name
 
   res
 }
@@ -149,6 +152,7 @@ load_isoform_results_intersect <- function(
   which_sample,
   method_label,
   method_fit_function,
+  include_empirical_bayes = FALSE,
   ...) {
   sim <- parse_simulation(sim_name)
 
@@ -173,62 +177,121 @@ load_isoform_results_intersect <- function(
   rm(so_data)
 
   s_which_filter <- sleuth_filter(obs_raw, ...)
-  # method_filters <- list()
-  # method_filters$edgeR <- edgeR_filter(obs_raw)
-  # method_filters$edgeR <- method_filters$edgeR & s_which_filter
-  #
-  # method_filters$DESeq2 <- DESeq2_filter(obs_raw)
-  # method_filters$DESeq2 <- method_filters$DESeq2 & s_which_filter
-
-  # limma
-
-  # sir_limma <- run_sleuth(sample_to_condition, gene_mode = NULL,
-  #   filter_target_id = names(which(s_which_filter)), ...)
-  #   # filter_target_id = names(which(method_filters$edgeR)), ...)
-  # sir_limma <- Filter(is.data.frame, sir_limma)
-  # # cds <- make_count_data_set(obs_raw[method_filters$edgeR, ], sample_to_condition)
-  # cds <- make_count_data_set(obs_raw[s_which_filter, ], sample_to_condition)
-  # limma_results <- runVoom(cds, FALSE, FALSE)
 
   method_result <- method_fit_function(obs_raw, sample_to_condition,
     s_which_filter)
   sir <- run_sleuth(sample_to_condition, gene_mode = NULL,
-    filter_target_id = method_result$filter)
+    filter_target_id = method_result$filter,
+    include_empirical_bayes = FALSE)
 
-  # isoform_cds <- get_filtered_isoform_cds(sir$so, sample_to_condition,
-  #   method_filtering)
-  # # sir$so <- NULL
-  #
-  # gene_methods <- list(
-  #   # DESeq2 = runDESeq2,
-  #   # edgeR = runEdgeR,
-  #   limmaVoom = runVoom
-  #   # edgerRobust = runEdgeRRobust,
-  #   # EBSeq = runEBSeq
-  #   )
-  # isoform_results <- lapply(gene_methods,
-  #   function(f) {
-  #     f(isoform_cds, FALSE, method_filtering)
-  #   })
-  # all_results <- c(Filter(is.data.frame, sir) , isoform_results)
+  all_results <- Filter(is.data.frame, sir)
+
+  if (include_empirical_bayes) {
+    seb <- run_sleuth(sample_to_condition, gene_mode = NULL,
+      filter_target_id = method_result$filter,
+      include_empirical_bayes = TRUE)
+    seb <- Filter(is.data.frame, seb)
+    names(seb) <- paste0(names(seb), '.eb')
+    all_results <- c(all_results, seb)
+  }
 
   # TODO: adjust the fdr based off of the filtering scheme
   # e.g. take the intersection of the tests and recompute the fdr
   # This ensures that the calibration tests can be comparable
 
-  # cr <- get_cuffdiff(
-  #   file.path('..', 'sims', sim_name, paste0("exp_", which_sample),
-  #     'results', 'cuffdiff')
-  #   )[['isoform']]
-  # all_results <- c(all_results, list(Cuffdiff2 = cr))
-
-  all_results <- Filter(is.data.frame, sir)
   all_results[[method_label]] <- method_result$result
 
   all_results
 }
 
+load_gene_results_intersect <- function(
+  sim_name,
+  which_sample,
+  method_label,
+  method_fit_function,
+  include_empirical_bayes = FALSE,
+  ...) {
+  sim <- parse_simulation(sim_name)
+
+  if (which_sample > sim$n) {
+    stop('which_sample must be less than the total number of replications: ', sim$n)
+  }
+
+  which_sample <- as.integer(which_sample)
+  n <- sim$a + sim$b
+
+  sim_info <- get_de_info(sim_name, which_sample, transcript_gene_mapping)
+  de_info <- sim_info$de_info
+  de_genes <- sim_info$de_genes
+
+  kal_dirs <- file.path('..', 'sims', sim_name, paste0("exp_", which_sample),
+    1:n, "kallisto")
+  sample_to_condition <- get_sample_to_condition(sim$a, sim$b, kal_dirs)
+
+  # TODO: load the gene counts
+  counts <- load_union_counts(sim, which_sample)
+
+  # simply do this so we can read in the data
+  so_data <- sleuth_prep(sample_to_condition, ~1, max_bootstrap = 3)
+  obs_raw <- sleuth:::spread_abundance_by(so_data$obs_raw, "est_counts")
+
+  # s_which_filter <- sleuth_filter(obs_raw, ...)
+  tmp <- so_data$obs_raw
+  tmp <- dplyr::group_by(tmp, target_id)
+  tmp <- dplyr::summarize(tmp, pass_filter = sleuth::basic_filter(est_counts))
+  tmp <- dplyr::inner_join(tmp, transcript_gene_mapping, by = 'target_id')
+  sleuth_gene_filter <- dplyr::filter(tmp, pass_filter)
+  sleuth_gene_filter <- dplyr::select(sleuth_gene_filter, target_id = ens_gene)
+  sleuth_gene_filter <- dplyr::distinct(sleuth_gene_filter)
+
+  s_which_filter <- rownames(counts) %in% sleuth_gene_filter$target_id
+  names(s_which_filter) <- rownames(counts)
+
+  message(paste0('### running method: ', method_label))
+  method_result <- method_fit_function(counts, sample_to_condition,
+    s_which_filter)
+  # since the gene filter is derived from the isoform filter, just use the sleuth
+  # filter for gene lifting
+  # debugonce(sleuth_prep)
+  if (include_empirical_bayes) {
+    message('### running empirical bayes')
+    slr <- run_sleuth(sample_to_condition, gene_mode = 'aggregate',
+      filter_target_id = method_result$filter, gene_column = 'ens_gene',
+      include_empirical_bayes = TRUE)
+    slr <- Filter(is.data.frame, slr)
+    names(slr) <- paste0(names(slr), '.eb')
+  } else {
+    message('### running gene lifting')
+    slr <- run_sleuth(sample_to_condition, gene_mode = 'lift')
+  }
+
+  message('### running gene aggregation')
+  sar <- run_sleuth(sample_to_condition, gene_mode = 'aggregate',
+    filter_target_id = method_result$filter, gene_column = 'ens_gene')
+
+  # TODO: adjust the fdr based off of the filtering scheme
+  # e.g. take the intersection of the tests and recompute the fdr
+  # This ensures that the calibration tests can be comparable
+
+  slr <- Filter(is.data.frame, slr)
+  # names(slr) <- paste0(names(slr), '.lift')
+  sar <- Filter(is.data.frame, sar)
+  names(sar) <- paste0(names(sar), '.agg')
+
+  all_results <- c(slr, sar)
+  # all_results <- sar
+  all_results[[method_label]] <- method_result$result
+
+  all_results
+}
+
+
+###
+# these functions are used for the isoform level analysis
+###
 limma_filter_and_run <- function(count_matrix, stc, sleuth_filter) {
+  which_targets <- DESeq2_filter(count_matrix)
+  sleuth_filter <- sleuth_filter & which_targets
   cds <- make_count_data_set(count_matrix[sleuth_filter, ], stc)
   res <- runVoom(cds, FALSE, FALSE)
   sleuth_filter <- names(which(sleuth_filter))
@@ -302,7 +365,15 @@ EBSeq_isoform_filter_and_run <- function(count_matrix, stc, sleuth_filter) {
   list(result = res, filter = sleuth_filter)
 }
 
-# transcript_gene_mapping <- get_human_gene_names()
+EBSeq_gene_filter_and_run <- function(count_matrix, stc, sleuth_filter) {
+  which_targets <- DESeq2_filter(count_matrix)
+  sleuth_filter <- sleuth_filter & which_targets
+  cds <- make_count_data_set(count_matrix[sleuth_filter, ], stc)
+  res <- runEBSeq(cds, FALSE, FALSE)
+  sleuth_filter <- names(which(sleuth_filter))
+
+  list(result = res, filter = sleuth_filter)
+}
 
 #' generate `sample_to_condition` that sleuth is expecting
 #'
@@ -349,12 +420,14 @@ make_count_data_set <- function(counts, sample_info) {
 }
 
 run_sleuth_prep <- function(sample_info, max_bootstrap = 30,
-  filter_target_id = NULL, ...) {
+  filter_target_id = NULL, gene_mode = NULL,
+  include_empirical_bayes = FALSE, ...) {
   so <- sleuth_prep(sample_info, ~ condition, max_bootstrap = max_bootstrap,
     target_mapping = transcript_gene_mapping,
     filter_target_id = filter_target_id,
+    gene_mode = gene_mode,
     ...)
-  so <- sleuth_fit(so)
+  so <- sleuth_fit(so, empirical_bayes = include_empirical_bayes)
 
   so
 }
@@ -363,12 +436,23 @@ run_sleuth_prep <- function(sample_info, max_bootstrap = 30,
 run_sleuth <- function(sample_info,
   max_bootstrap = 30,
   gene_mode = NULL,
+  gene_column = NULL,
   filter_target_id = NULL,
+  include_empirical_bayes = FALSE,
   ...) {
+
+  so <- NULL
+  if (!is.null(gene_column)) {
+    so <- run_sleuth_prep(sample_info, max_bootstrap = max_bootstrap,
+      include_empirical_bayes = include_empirical_bayes,
+      filter_target_id = filter_target_id, gene_mode = gene_column, ...)
+  } else {
   so <- run_sleuth_prep(sample_info, max_bootstrap = max_bootstrap,
+    include_empirical_bayes = include_empirical_bayes,
     filter_target_id = filter_target_id, ...)
+  }
   so <- sleuth_wt(so, 'conditionB')
-  so <- sleuth_fit(so, ~ 1, 'reduced')
+  so <- sleuth_fit(so, ~ 1, 'reduced', empirical_bayes = include_empirical_bayes)
   so <- sleuth_lrt(so, 'reduced', 'full')
 
   res <- NULL
@@ -384,7 +468,11 @@ run_sleuth <- function(sample_info,
     wt <- get_gene_lift(so, 'conditionB', test_type = 'wt')
     res <- list(sleuth.lrt = lrt, sleuth.wt = wt)
   } else if (gene_mode == 'aggregate') {
-    stop('TODO: implement me!')
+    lrt <- sleuth_results(so, 'reduced:full', test_type = 'lrt',
+      show_all = FALSE)[, c('target_id', 'pval', 'qval')]
+    wt <- sleuth_results(so, 'conditionB',
+      show_all = FALSE)[, c('target_id', 'pval', 'qval')]
+    res <- list(sleuth.lrt = lrt, sleuth.wt = wt)
   } else {
     stop('Unrecognized mode for "run_sleuth"')
   }
