@@ -213,7 +213,7 @@ simulate_gene_counts <- function(prep_df,
 
   set.seed(seed)
 
-  # a gene passes the filter is at least 1 transcript passes the filter
+  # a gene passes the filter if at least 1 transcript passes the filter
   prep_df <- left_join(prep_df, target_mapping, by = "target_id")
   genes_pass_filter <- prep_df %>%
     group_by_(gene_label) %>%
