@@ -94,8 +94,11 @@ rule all:
         expand('sims/isoform_3_3_20_1_1/exp_{n}/results/sleuth',
             n = range(1, 20 + 1)),
         expand('sims/isoform_3_3_20_1_1/exp_{n}/results/cuffdiff/isoform_exp.diff',
-            n = range(1, 20 + 1))
+            n = range(1, 20 + 1)),
 
+        # 'sims/gcd_3_3_20_1_2/sims.rds'
+        expand('sims/gcd_3_3_20_1_2/exp_{n}/results/sleuth',
+            n = range(1, 20 + 1))
         # isoform_simulations[0:5],
         # isoform_reads[0:5]
 
@@ -130,6 +133,21 @@ rule gen_sim_script_isoform:
     shell:
         source_r('R', 'gen_sim.R') + ' '
         'isoform_{wildcards.n_a}_{wildcards.n_b}_{wildcards.n_sim}_{wildcards.seed}_{wildcards.sf} '
+        ' {wildcards.n_sim}'
+        ' {wildcards.n_a}'
+        ' {wildcards.n_b}'
+        ' {wildcards.seed}'
+        ' {wildcards.sf}'
+
+rule gen_sim_script_geneCommonDirection:
+    input:
+        'results/prep_fin.RData'
+    output:
+        'sims/gcd_{n_a,\d+}_{n_b}_{n_sim}_{seed,\d+}_{sf,\d+}',
+        'sims/gcd_{n_a,\d+}_{n_b}_{n_sim}_{seed}_{sf}/sims.rds'
+    shell:
+        source_r('R', 'gen_sim_gcd.R') + ' '
+        'gcd_{wildcards.n_a}_{wildcards.n_b}_{wildcards.n_sim}_{wildcards.seed}_{wildcards.sf} '
         ' {wildcards.n_sim}'
         ' {wildcards.n_a}'
         ' {wildcards.n_b}'
