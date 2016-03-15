@@ -73,3 +73,10 @@ RSEM_MODEL = BASE + '/geuvadis/results/rsem/HG00365_7/out.stat/out.model'
 ###
 def source_r(base, fname):
     return 'Rscript --vanilla --default-packages=methods,stats,utils -e \'setwd("{0}")\' -e \'source("{1}")\''.format(base, fname)
+
+def get_sample_ids(fname):
+    ret = []
+    with open(fname, 'r') as fhandle:
+        for line in fhandle:
+            ret.append(line.strip("\n"))
+    return ret

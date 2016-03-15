@@ -1,0 +1,27 @@
+include: '../config.py'
+
+from os.path import isfile
+
+SAMPLES_FILE = 'metadata/accession.txt'
+
+SRA_SINGLE = []
+if isfile(SAMPLES_FILE):
+    SRA_SINGLE = get_sample_ids(SAMPLES_FILE)
+
+
+rule all:
+    input:
+        expand('data/single/{id}/{id}.fastq.gz', id = SRA_SINGLE)
+
+rule fastq_dump_single:
+    input:
+        SAMPLES_FILE
+    output:
+        'data/single/{id}',
+        'data/single/{id}/{id}.fastq.gz'
+    threads: 1
+    shell:
+        'fastq-dump'
+        ' -O {output[0]}'
+        ' --gzip'
+        ' {wildcards.id}'
