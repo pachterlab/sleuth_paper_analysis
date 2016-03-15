@@ -214,11 +214,11 @@ simulate_gene_counts <- function(prep_df,
   set.seed(seed)
 
   # a gene passes the filter is at least 1 transcript passes the filter
-  prep_df <- left_join(prep_df, target_mapping, by = "target_id")
+  prep_df <- dplyr::left_join(prep_df, target_mapping, by = "target_id")
   genes_pass_filter <- prep_df %>%
     group_by_(gene_label) %>%
     summarize(gene_filter = any(sim_filt))
-  prep_df <- left_join(prep_df, genes_pass_filter, by = gene_label)
+  prep_df <- dplyr::left_join(prep_df, genes_pass_filter, by = gene_label)
 
   # "gene_names" refers to the genes that pass the filter
   gene_names <- dplyr::filter(prep_df, gene_filter)[[gene_label]] %>% unique
@@ -229,6 +229,159 @@ simulate_gene_counts <- function(prep_df,
 
   condition <- factor(c(rep("A", n_a), rep("B", n_b)))
   X <- model.matrix(~ condition)
+
+  prep_df <- dplyr::group_by_(prep_df, gene_label)
+  prep_df <- dplyr::mutate(prep_df,
+    n_transcripts = length(target_id),
+    rank = rank(baseMean, ties = 'first'))
+
+  # prep_df_init is a template that should be copied at the beginning of every
+  # iteration
+  prep_df_init <- prep_df
+
+  sim <- lapply(1:n_sim,
+    function(i) {
+      message('iteration: ', i)
+      prep_df <- prep_df_init
+
+      # select the genes to be differentially expressed and choose their fold change
+      which_de <- sample(gene_names, n_de, replace = FALSE)
+
+      # this will initialize everything to `log_fc`, but will get overwritten
+      # `generate_fold_changes()` below
+      which_de <- data.frame(gene_name = which_de, log_fc = log_fc, is_de = TRUE,
+        stringsAsFactors = FALSE)
+      data.table::setnames(which_de, "gene_name", gene_label)
+
+      prep_df <- dplyr::left_join(prep_df, which_de, by = gene_label)
+      # prep_df <- dplyr::mutate(prep_df,
+      #   log_fc = ifelse(is.na(log_fc), 0, log_fc),
+      #   is_de = ifelse(is.na(is_de), FALSE, is_de)
+      # )
+      prep_df <- dplyr::mutate(prep_df,
+        is_de = ifelse(is.na(is_de), FALSE, is_de)
+      )
+
+      # instead of complicating our lives with another join, generate fold changes for everything
+      prep_df <- generate_fold_changes(prep_df)
+
+      size_factors <- size_factor_function(n_samples)
+      message(paste0("size factors: ", paste(size_factors, collapse = ' ')))
+
+      # clean out the old fold changes
+      prep_df <- dplyr::mutate(prep_df,
+        log_fc = ifelse(is_de, log_fc, 0))
+      s <- sim_function(prep_df, X, size_factors = size_factors)
+      colnames(s)
+      colnames(s) <- paste0(condition, c(1:n_a, 1:n_b))
+      rownames(s) <- prep_df$target_id
+      list(counts = s, info = prep_df, condition = condition,
+        size_factors = size_factors)
+    })
+
+  sim
+}
+# debugonce(simulate_counts)
+# debugonce(make_sim)
+
+gene_fold_change <- function(df) {
+  df <- dplyr::group_by(df, ens_gene)
+  dplyr::mutate(df, log_fc = gfc_same_direction(length(ens_gene)))
+}
+
+gene_fold_change_reference <- function(df, reference) {
+  df <- dplyr::group_by(dplyr::ungroup(df), ens_gene)
+  df <- dplyr::mutate(df, n_transcripts = length(target_id),
+    rank = rank(baseMean, ties = 'first'))
+  df_de <- dplyr::filter(df, is_de)
+
+  # dplyr::mutate(df, log_fc = ifelse(is_de,
+  #   match_rank_fold_change(current_rank, reference, target_id),
+  #   0))
+  df_de <- dplyr::do(df_de, {
+    # if (any(.$is_de)) {
+      match_rank_fold_change_df(., reference)
+      # } else {
+      #   .
+      # }
+    })
+  df <- dplyr::filter(df, !is_de)
+  #
+  # matching <- match(df$target_id, df_de$target_id)
+  # reference$log_fc[matching]
+  dplyr::bind_rows(df, df_de)
+}
+
+match_rank_fold_change <- function(df_rank, reference) {
+  nt <- length(df_rank)
+  reference <- dplyr::distinct(dplyr::filter(reference, n_transcripts == nt))
+  which_gene <- sample(unique(reference$ens_gene), 1)
+  reference <- dplyr::filter(reference, ens_gene == which_gene)
+  matching <- match(df_rank, reference$rank)
+
+  reference$log_fc[matching]
+}
+
+match_rank_fold_change_df <- function(df, reference) {
+  nt <- nrow(df)
+  reference <- dplyr::filter(reference, n_transcripts == nt)
+
+  if (nrow(reference) == 0) {
+    print(df)
+  }
+
+  which_gene <- sample(unique(reference$ens_gene), 1)
+  reference <- dplyr::filter(reference, ens_gene == which_gene)
+  matching <- match(df$rank, reference$rank)
+
+  df$log_fc <- reference$log_fc[matching]
+  if (any(is.na(df$log_fc))) {
+    print('data frame: ')
+    print(df)
+    print('reference: ')
+    print(reference)
+    stop()
+  }
+
+  df
+}
+
+simulate_gene_counts_with_reference <- function(prep_df,
+  target_mapping,
+  gene_label,
+  n_sim = 1,
+  n_a = 3,
+  n_b = 3,
+  prop_de = 0.2,
+  seed = 37L,
+  log_fc = 1,
+  log_fc_sd = NA,
+  sim_function = make_sim,
+  # size_factors = rep(1, n_a + n_b),
+  size_factor_function = sf_mode_1,
+  generate_fold_changes = gene_fold_change
+  ) {
+  stopifnot( is(prep_df, "data.frame") )
+
+  set.seed(seed)
+
+  # a gene passes the filter is at least 1 transcript passes the filter
+  prep_df <- dplyr::left_join(prep_df, target_mapping, by = "target_id")
+  genes_pass_filter <- prep_df %>%
+    group_by_(gene_label) %>%
+    summarize(gene_filter = any(sim_filt))
+  prep_df <- dplyr::left_join(prep_df, genes_pass_filter, by = gene_label)
+
+  # "gene_names" refers to the genes that pass the filter
+  gene_names <- dplyr::filter(prep_df, gene_filter)[[gene_label]] %>% unique
+  n_genes <- length(gene_names)
+  n_de <- ceiling(prop_de * n_genes)
+
+  n_samples <- n_a + n_b
+
+  condition <- factor(c(rep("A", n_a), rep("B", n_b)))
+  X <- model.matrix(~ condition)
+
 
   # prep_df_init is a template that should be copied at the beginning of every
   # iteration
@@ -282,13 +435,6 @@ simulate_gene_counts <- function(prep_df,
   # list(counts = sim, info = prep_df, condition = condition,
   #   size_factors = size_factors)
   sim
-}
-# debugonce(simulate_counts)
-# debugonce(make_sim)
-
-gene_fold_change <- function(df) {
-  df <- dplyr::group_by(df, ens_gene)
-  dplyr::mutate(df, log_fc = gfc_same_direction(length(ens_gene)))
 }
 
 #' Generate gene fold counts in the same direction

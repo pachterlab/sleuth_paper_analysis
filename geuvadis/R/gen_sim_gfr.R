@@ -1,10 +1,20 @@
 args <- commandArgs(trailingOnly = TRUE)
 
 if( length(args) != 7) {
-  stop("Usage: gen_sim.R BASE_OUT N_SIMULATIONS N_A N_B SEED SIZE_FACTOR_TYPE")
+  stop("Usage: gen_sim_gfr.R BASE_OUT N_SIMULATIONS N_A N_B SEED SIZE_FACTOR_TYPE")
 }
 
 cat("Args: ", args, "\n")
+
+# temporary
+# sim_name <- 'tmp'
+# n_sim <- 2L
+# n_a <- 3L
+# n_b <- 3L
+# seed <- 1
+# sf_type <- 2
+# log_fc <- 1
+# end temporary
 
 sim_name <- args[1]
 n_sim <- as.integer(args[2])
@@ -13,16 +23,6 @@ n_b <- as.integer(args[4])
 seed <- as.integer(args[5])
 sf_type <- as.integer(args[6])
 log_fc <- as.integer(args[7])
-
-# temporary
-# sim_name <- 'tmp'
-# n_sim <- 10L
-# n_a <- 3L
-# n_b <- 3L
-# seed <- 1
-# sf_type <- 2
-# log_fc <- 1
-# end temporary
 
 n_total <- n_a + n_b
 
@@ -41,22 +41,92 @@ sf_function <- switch(sf_type,
 load("../results/prep_fin.RData", verbose = TRUE)
 
 cat("Generating counts\n")
-# debugonce(simulate_counts)
-#
-# debugonce(make_sim)
+
 mart <- biomaRt::useMart(biomart = "ENSEMBL_MART_ENSEMBL",
   dataset = "hsapiens_gene_ensembl",
-  host="www.ensembl.org")
+  host = "may2015.archive.ensembl.org")
+  # host="www.ensembl.org")
 ttg <- biomaRt::getBM(attributes = c("ensembl_transcript_id", "ensembl_gene_id",
     "external_gene_name"), mart = mart)
-# ttg <- readRDS('~/ttg.rds')
 
 # rename the columns: ensure we have 'target_id' and also make the others a bit
 # shorter
 ttg <- dplyr::rename(ttg, target_id = ensembl_transcript_id,
   ens_gene = ensembl_gene_id, ext_gene = external_gene_name)
 
-# debugonce(simulate_gene_counts)
+fc <- readRDS('../../cuffdiff2_analysis/results/fc.rds')
+
+# fc <- dplyr::mutate(fc, log_fc = log2(fold_change))
+#
+# b <- tmp %>% dplyr::filter('ENSG00000004059' == ens_gene)
+#
+# tmp <- sim[[1]]$info
+# tmp <- tmp %>%
+#   dplyr::group_by(ens_gene) %>%
+#   dplyr::mutate(n_transcripts = length(ens_gene),
+#     rank = rank(baseMean, ties = 'first'))
+#
+# debugonce(match_rank_fold_change)
+# match_rank_fold_change(b, fc)
+#
+# b <- tmp
+# b <- tmp %>% dplyr::filter(is_de)
+# b <- dplyr::mutate(b, current_rank = rank)
+# b <- dplyr::mutate(b, log_fc = NA)
+#
+# b <- dplyr::group_by(b, ens_gene)
+#
+#
+# something <- dplyr::do(b, {
+#     match_rank_fold_change_df(., fc)
+#   })
+
+
+# b <- dplyr::filter(b, ens_gene == 'ENSG00000002587' | ens_gene == 'ENSG00000001630')
+#
+#
+#
+#
+# de_n_transcripts <- unique(dplyr::filter(tmp, is_de)$n_transcripts)
+# invalid_transcripts <- setdiff(de_n_transcripts, n_transcripts_valid)
+# invalid_transcripts <- semi_join(tmp,
+#   data.frame(n_transcripts = invalid_transcripts),
+#   by = 'n_transcripts')
+# invalid_transcripts <- invalid_transcripts$target_id
+#
+# tmp3 <- dplyr::mutate(tmp, is_de = ifelse(target_id %in% invalid_transcripts,
+#   FALSE, is_de))
+#
+# d <- dplyr::mutate(b, log_fc = ifelse(is_de,
+#   match_rank_fold_change(current_rank, fc, target_id),
+#   0))
+#
+# tmp3 <- dplyr::mutate(tmp, is_de = ifelse(target_id %in% invalid_transcripts,
+#   FALSE, is_de))
+# #
+#
+# hello <- gene_fold_change_reference(b, fc)
+
+gfcr <- function(df) {
+  # remove the things that are invalid
+  possible <- unique(fc$n_transcripts)
+  invalid <- setdiff(unique(df$n_transcripts), possible)
+  invalid_rows <- df$n_transcripts %in% invalid
+  df$is_de[invalid_rows] <- FALSE
+  warning('Invalidated ', sum(invalid_rows),
+    ' because no match in the reference')
+
+  original_order <- df$target_id
+
+  res <- gene_fold_change_reference(df, fc)
+
+  res[match(original_order, res$target_id), ]
+}
+
+
+
+debugonce(simulate_gene_counts)
+
 sim <- simulate_gene_counts(prep_fin,
   target_mapping = ttg,
   gene_label = "ens_gene",
@@ -66,6 +136,7 @@ sim <- simulate_gene_counts(prep_fin,
   prop_de = 0.20,
   seed = seed,
   log_fc = log_fc,
+  generate_fold_changes = gfcr,
   # log_fc_sd = 1,
   size_factor_function = sf_function)
 
