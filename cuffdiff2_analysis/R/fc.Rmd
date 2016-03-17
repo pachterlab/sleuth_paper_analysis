@@ -8,6 +8,8 @@ output:
 
 ```{r}
 source('load_info.R')
+source('../../geuvadis/R/benchmark_methods.R')
+source('../../simulation_core/R/simulate_de.R')
 ls()
 ```
 
@@ -19,6 +21,7 @@ Use the genes that were called differentially expressed at FDR 0.05.
 Since the likelihood ratio test is more conservative, we will use it only.
 
 ```{r}
+suppressPackageStartupMessages(library('sleuth'))
 sgr <- readRDS('../results/sgr.rds')
 sr <- dplyr::filter(sgr$sleuth.lrt, qval <= 0.05)
 sr <- dplyr::select(sr, ens_gene)
@@ -28,7 +31,7 @@ sr <- dplyr::select(sr, ens_gene)
 
 ```{r}
 ds <- readRDS('../results/DESeq2.rds')
-ds_res <- dplyr::filter(res, qval <= 0.05)
+ds_res <- dplyr::filter(ds, qval <= 0.05)
 ds_res <- dplyr::select(ds_res, ens_gene)
 ```
 

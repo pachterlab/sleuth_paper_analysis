@@ -21,7 +21,9 @@ rule all:
     input:
         META,
         expand('results/paired/{id}/kallisto/abundance.h5', id = SRA_PAIRED),
-        expand('results/paired/{id}/featureCounts.txt', id = SRA_PAIRED)
+        expand('results/paired/{id}/featureCounts.txt', id = SRA_PAIRED),
+
+        'results/fc.rds'
 
 rule metadata:
     output:
@@ -103,3 +105,28 @@ rule featureCounts:
         ' -T {threads}'
         ' -p'
         ' {input}'
+
+rule sleuth:
+    input:
+        expand('results/paired/{id}/kallisto/abundance.h5', id = SRA_PAIRED)
+    output:
+        'results/sgr.rds'
+    shell:
+        source_r('R', 'sleuth.R')
+rule DESeq2:
+    input:
+        expand('results/paired/{id}/featureCounts.txt', id = SRA_PAIRED)
+    output:
+        'results/DESeq2.rds'
+    shell:
+        source_r('R', 'DESeq2.R')
+
+rule generate_fold_changes:
+    input:
+        'results/sgr.rds',
+        'results/DESeq2.rds'
+    output:
+        'results/fc.rds',
+        'R/fc.html'
+    shell:
+        source_rmd('R', 'fc.Rmd')

@@ -1,6 +1,3 @@
-source("https://bioconductor.org/biocLite.R")
-biocLite("tximport")
-
 source('load_info.R')
 source('../../geuvadis/R/benchmark_methods.R')
 source('../../simulation_core/R/simulate_de.R')
@@ -32,14 +29,3 @@ cds <- make_count_data_set(counts, info)
 
 res <- runDESeq2(cds)
 saveRDS(res, '../results/DESeq2.rds')
-
-ds_res <- dplyr::filter(res, qval <= 0.05)
-
-
-sr <- dplyr::filter(sgr$sleuth.lrt, qval <= 0.05)
-
-s_length <- length(sr$target_id)
-d_length <- nrow(ds_res)
-
-length(intersect(ds_res$ens_gene, sr$target_id))
-length(union(ds_res$ens_gene, sr$target_id))
