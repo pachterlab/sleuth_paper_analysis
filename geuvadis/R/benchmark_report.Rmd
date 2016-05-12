@@ -1,0 +1,658 @@
+---
+  title: "benchmark report for simulations"
+  output:
+    html_document:
+      fig_height: 20
+      fig_width: 20
+---
+
+# preliminaries
+
+```{r, eval=FALSE}
+n_cpu <- 20
+sim_name <- 'gfr_3_3_20_42_2'
+sim_name <- 'gcd_3_3_20_1_2'
+sim_name <- 'isoform_3_3_20_1_1'
+```
+
+
+```{r}
+args <- commandArgs(trailingOnly = TRUE)
+if (length(args) != 2) {
+  stop('Usage: RScript N_CPU EXPERIMENT_STRING')
+}
+n_cpu <- args[1]
+sim_name <- args[2]
+```
+
+The simulation string is:
+
+```{r}
+sim_name
+```
+
+We use the variable `simulation_mode` to build different axes depending on the simulation.
+These axes have been tuned by hand.
+
+```{r}
+prefix <- strsplit(sim_name, '_')[[1]][1]
+simulation_mode <- switch(prefix,
+  'isoform' = 'independent',
+  'gcd' = 'common',
+  'gfr' = 'reference',
+  stop(paste0('unrecognized simulation type. Please check the `sim_name`: ',
+    sim_name)
+  ))
+```
+
+The simulation mode is: `R simulation_mode`.
+
+Some more global variables on where to save the figures:
+
+```{r}
+base_dir <- '../results/final_figures'
+default_extension <- '.pdf'
+```
+
+A theme that seems to save well:
+
+```{r}
+theme_hp <- function() {
+  theme_cowplot(25) +
+    theme(legend.key.size = unit(2, "lines"))
+}
+```
+
+## load packages
+
+```{r}
+suppressPackageStartupMessages({
+library('cowplot')
+library('data.table')
+library('dplyr')
+library('mamabear')
+library('parallel')
+})
+source('gene_common.R')
+options(mc.cores = n_cpu)
+```
+
+set the number of columns for each grid
+
+```{r}
+n_grid_columns <- 2
+```
+
+# isoform benchmarks
+
+## fdr/power curves when everyone is using their own filter
+
+```{r}
+each_filter_benchmark <- readRDS(paste0('../results/', sim_name,
+  '/isoform_benchmarks_filter.rds'))
+```
+
+next, let's rename some things for aesthetics
+
+```{r}
+suppressMessages(
+each_filter_benchmark <- lapply(each_filter_benchmark,
+  rename_benchmark,
+  c('Cuffdiff2', 'limmaVoom'),
+  c('Cuffdiff 2', 'voom'), join_mode = 'union')
+)
+```
+
+because some of the true things will inevitably get filtered, remove the ones we think will be removed from the truth (`sim_filter = TRUE`).
+
+```{r}
+suppressMessages(current_fdr <- get_fdr(each_filter_benchmark, sim_filter = TRUE)$pvals)
+```
+
+Zoom into a relevant area:
+
+```{r}
+tmp <- fdr_efdr_power_plot(current_fdr, start = 100, jump = 100, rank_fdr = 0.10,
+  method_colors = method_colors, fdr_level_position = -0.005)
+
+current_limits <- switch(simulation_mode,
+  independent = list(x = c(-0.01, 0.25), y = c(-0.01, 0.28)),
+  common = list(x = c(-0.01, 0.25), y = c(-0.01, 0.20)),
+  reference = list(x = c(-0.01, 0.25), y = c(-0.01, 0.075))
+  )
+
+p <- tmp + theme_hp()
+p <- p + coord_cartesian(xlim = current_limits$x, ylim = current_limits$y,
+  expand = FALSE)
+p
+
+filename <- file.path(base_dir, paste0('isoform.each_filter_', sim_name,
+  default_extension))
+save_plot(filename, p, base_aspect_ratio = 1.6, base_height = 15)
+```
+
+```{r}
+tmp <- fdr_efdr_power_plot(current_fdr, start = 500, jump = 500, rank_fdr = 0.10,
+  method_colors = method_colors, fdr_level_position = -0.02)
+
+p <- tmp +
+  coord_cartesian(xlim = c(-0.05, 1), ylim = c(-0.05, 1), expand = FALSE) +
+  theme_hp()
+p <- p +
+  geom_polygon(aes(x, y), alpha = 0.20,
+    data = data.frame(
+    x = c(0, 0, current_limits$x[2], current_limits$x[2]),
+    y = c(0, current_limits$y[2], current_limits$y[2], 0)))
+p
+
+filename <- file.path(base_dir, paste0('isoform.each_filter_nozoom_', sim_name,
+  default_extension))
+save_plot(filename, p, base_aspect_ratio = 1.6, base_height = 15)
+```
+
+
+## each method on their own filter
+
+```{r}
+all_benchmarks <- readRDS(paste0('../results/', sim_name,
+  '/isoform_benchmarks.rds'))
+all_benchmarks <- all_benchmarks[sort(names(all_benchmarks))]
+```
+
+For the paper, let's look at only a subset of the things.
+In general, we are recommending the likelihood ratio test and aggregation.
+Let's remove everything else:
+
+```{r}
+to_remove <- c('sleuth.wt')
+subset_benchmarks <- lapply(all_benchmarks,
+  function(bench_list) {
+    lapply(bench_list,
+      function(bench) {
+        filter_benchmark(bench, to_remove, join_mode = 'intersect')
+      })
+  })
+```
+
+Generate all of the FDR versus number of differentially expressed genes
+
+```{r}
+subset_nde_plot <- lapply(subset_benchmarks,
+  function(bench) {
+    suppressMessages(fdr_nde_plot(bench)) +
+      theme_hp()
+  })
+
+current_limits <- switch(simulation_mode,
+    independent = coord_cartesian(xlim = c(-0.01, 2250), ylim = c(-0.01, 0.10),
+      expand = FALSE),
+    common = coord_cartesian(xlim = c(-0.01, 2000), ylim = c(-0.01, 0.15),
+      expand = FALSE),
+    reference = coord_cartesian(xlim = c(-0.01, 700), ylim = c(-0.01, 0.15),
+      expand = FALSE)
+  )
+subset_nde_plot <- lapply(subset_nde_plot, function(x) x + current_limits)
+plot_grid(plotlist = subset_nde_plot, ncol = n_grid_columns)
+```
+
+## estimated fdr versus true fdr
+
+The black line is $x = y$.
+If you are below the line, you are conservative.
+If you are above the line, you are anti-conservative.
+
+```{r}
+current_limits <- switch(simulation_mode,
+    independent = coord_cartesian(xlim = c(-0.01, 1), ylim = c(-0.01, 1),
+      expand = FALSE),
+    common = coord_cartesian(xlim = c(-0.01, 1), ylim = c(-0.01, 1),
+      expand = FALSE),
+    reference = coord_cartesian(xlim = c(-0.01, 1), ylim = c(-0.01, 1),
+      expand = FALSE)
+  )
+
+subset_fdr_efdr_plot <- lapply(subset_benchmarks,
+  function(bench) {
+    suppressMessages(fdr_efdr_plot(bench)) +
+      theme_hp() +
+      theme(legend.position = c(0.80, 0.15)) +
+      geom_abline(slope = 1, intercept = 0, color = 'black', linetype = 3)
+  })
+subset_fdr_efdr_plot <- lapply(subset_fdr_efdr_plot,
+  function(x) x + current_limits)
+plot_grid(plotlist = subset_fdr_efdr_plot, ncol = n_grid_columns)
+```
+
+## box plots of estimated fdr versus true fdr
+
+```{r}
+subset_bp <- lapply(subset_benchmarks,
+  function(bench) {
+    suppressMessages(boxplot_prep(bench, c(0.01, 0.05, 0.10)))
+  })
+```
+
+Looking at the estimated fdr versus the true fdr
+
+```{r}
+subset_fdr_efdr_boxplot <- lapply(subset_bp,
+  function(bp) {
+    fdr_efdr_boxplot(bp)
+  })
+plot_grid(plotlist = subset_fdr_efdr_boxplot, ncol = n_grid_columns)
+```
+
+Looking at the estimated fdr versus the power
+
+```{r}
+subset_power_efdr_boxplot <- lapply(subset_bp,
+  function(bp) {
+    power_efdr_boxplot(bp)
+  })
+plot_grid(plotlist = subset_power_efdr_boxplot, ncol = n_grid_columns)
+```
+
+Looking at the estimated fdr versus the accuracy
+
+```{r}
+subset_accuracy_efdr_boxplot <- lapply(subset_bp,
+  function(bp) {
+    ggplot(bp, aes(method, accuracy)) +
+      geom_boxplot(aes(color = method)) +
+      facet_wrap(~fdr_level)
+  })
+plot_grid(plotlist = subset_accuracy_efdr_boxplot, ncol = n_grid_columns)
+```
+
+Looking at the estimated fdr versus the specificity
+
+```{r}
+subset_specificity_efdr_boxplot <- lapply(subset_bp,
+  function(bp) {
+    ggplot(bp, aes(method, specificity)) +
+      geom_boxplot(aes(color = method)) +
+      facet_wrap(~fdr_level)
+  })
+plot_grid(plotlist = subset_specificity_efdr_boxplot, ncol = n_grid_columns)
+```
+
+```{r}
+subset_fdr_power <- lapply(subset_benchmarks,
+  function(bench) {
+    fdr_power_plot(bench)
+  })
+plot_grid(plotlist = subset_fdr_power, ncol = n_grid_columns)
+```
+
+## fdr/power curves when taking the intersection of filters
+
+Use `sim_filter = TRUE` on isoforms to remove things that we remove isoforms that we expect to be to locally express to detect.
+
+```{r}
+subset_fdr <- lapply(subset_benchmarks,
+  function(bench) {
+    suppressMessages(get_fdr(bench, sim_filter = TRUE)$pvals)
+  })
+```
+
+```{r}
+subset_fdr_power_plot <- lapply(subset_fdr,
+  function(bench) {
+    suppressMessages(fdr_efdr_power_plot(bench, start = 100, jump = 100)) +
+      theme_hp()
+  })
+
+current_limits <- switch(simulation_mode,
+    independent = coord_cartesian(xlim = c(-0.01, 0.25), ylim = c(-0.01, 0.32),
+      expand = FALSE),
+    common = coord_cartesian(xlim = c(-0.01, 0.25), ylim = c(-0.01, 0.30),
+      expand = FALSE),
+    reference = coord_cartesian(xlim = c(-0.01, 0.20), ylim = c(-0.01, 0.10),
+      expand = FALSE)
+  )
+subset_fdr_power_plot <- lapply(subset_fdr_power_plot,
+  function(x) x + current_limits)
+p <- plot_grid(plotlist = subset_fdr_power_plot, ncol = n_grid_columns)
+p
+
+filename <- file.path(base_dir, paste0('isoform.pairwise_zoom_', sim_name,
+  default_extension))
+save_plot(filename, p, base_aspect_ratio = 1.6, base_height = 15)
+```
+
+### The full benchmarks
+
+```{r}
+current_limits <- switch(simulation_mode,
+    independent = coord_cartesian(xlim = c(-0.01, 2000), ylim = c(-0.01, 0.15),
+      expand = FALSE),
+    common = coord_cartesian(xlim = c(-0.01, 2000), ylim = c(-0.01, 0.15),
+      expand = FALSE),
+    reference = coord_cartesian(xlim = c(-0.01, 700), ylim = c(-0.01, 0.10),
+      expand = FALSE)
+  )
+
+all_nde_plot <- lapply(all_benchmarks,
+  function(bench) {
+    suppressMessages(fdr_nde_plot(bench)) +
+      theme_hp()
+  })
+all_nde_plot <- lapply(all_nde_plot, function(x) x + current_limits)
+plot_grid(plotlist = all_nde_plot, ncol = n_grid_columns)
+```
+
+```{r}
+all_fdr_efdr_plot <- lapply(all_benchmarks,
+  function(bench) {
+    suppressMessages(fdr_efdr_plot(bench)) +
+      theme_hp() +
+      geom_abline(slope = 1, intercept = 0, color = 'black', linetype = 3)
+  })
+plot_grid(plotlist = all_fdr_efdr_plot, ncol = n_grid_columns)
+```
+
+```{r}
+all_fdr_power <- lapply(all_benchmarks,
+  function(bench) {
+    fdr_power_plot(bench, sim_filter = TRUE) +
+    theme_hp()
+  })
+
+current_limits <- switch(simulation_mode,
+    independent = coord_cartesian(xlim = c(-0.01, 0.25), ylim = c(-0.01, 0.10),
+      expand = FALSE),
+    common = coord_cartesian(xlim = c(-0.01, 0.10), ylim = c(-0.01, 0.10),
+      expand = FALSE),
+    reference = coord_cartesian(xlim = c(-0.01, 0.10), ylim = c(-0.01, 0.03),
+      expand = FALSE)
+  )
+all_fdr_power <- lapply(all_fdr_power, function(x) x + current_limits)
+plot_grid(plotlist = all_fdr_power, ncol = n_grid_columns)
+```
+
+--------------------------------------------------------------------------------
+
+# gene benchmarks
+
+## fdr/power curves when everyone is using their own filter
+
+```{r}
+each_filter_benchmark <- readRDS(paste0('../results/', sim_name,
+  '/gene_benchmarks_filter.rds'))
+```
+
+next, let's rename some things for aesthetics
+
+```{r}
+suppressMessages(
+each_filter_benchmark <- lapply(each_filter_benchmark,
+  rename_benchmark,
+  c('Cuffdiff2', 'limmaVoom'),
+  c('Cuffdiff 2', 'voom'), join_mode = 'union')
+)
+```
+
+```{r}
+suppressMessages(current_fdr <- get_fdr(each_filter_benchmark)$pvals)
+```
+
+Zoom into a relevant area:
+
+```{r}
+tmp <- fdr_efdr_power_plot(current_fdr, start = 100, jump = 100, rank_fdr = 0.10,
+  method_colors = method_colors, fdr_level_position = -0.005)
+
+current_limits <- switch(simulation_mode,
+  independent = list(x = c(-0.01, 0.25), y = c(-0.01, 0.10)),
+  common = list(x = c(-0.01, 0.25), y = c(-0.01, 0.70)),
+  reference = list(x = c(-0.01, 0.25), y = c(-0.01, 0.25))
+  )
+
+p <- tmp + theme_hp()
+p <- p + coord_cartesian(xlim = current_limits$x, ylim = current_limits$y,
+  expand = FALSE)
+p
+
+filename <- file.path(base_dir, paste0('gene.each_filter_', sim_name,
+  default_extension))
+save_plot(filename, p, base_aspect_ratio = 1.6, base_height = 15)
+```
+
+```{r}
+debugonce(fdr_efdr_power_plot)
+tmp <- fdr_efdr_power_plot(current_fdr, start = 500, jump = 500, rank_fdr = 0.10,
+  method_colors = method_colors, fdr_level_position = -0.02)
+
+p <- tmp +
+  coord_cartesian(xlim = c(-0.05, 1), ylim = c(-0.05, 1), expand = FALSE) +
+  theme_hp()
+p <- p +
+  geom_polygon(aes(x, y), alpha = 0.20,
+    data = data.frame(
+    x = c(0, 0, current_limits$x[2], current_limits$x[2]),
+    y = c(0, current_limits$y[2], current_limits$y[2], 0)))
+p
+
+filename <- file.path(base_dir, paste0('gene.each_filter_nozoom_', sim_name,
+  default_extension))
+save_plot(filename, p, base_aspect_ratio = 1.6, base_height = 15)
+```
+
+
+## pairwise comparisons
+
+Load the data:
+
+```{r}
+all_benchmarks <- readRDS(paste0('../results/', sim_name, '/gene_benchmarks.rds'))
+all_benchmarks <- all_benchmarks[sort(names(all_benchmarks))]
+```
+
+For the paper, let's look at only a subset of the things.
+In general, we are recommending the likelihood ratio test and aggregation.
+Let's remove everything else:
+
+```{r}
+to_remove <- c('sleuth.wt.lift', 'sleuth.lrt.lift', 'sleuth.wt.agg')
+subset_benchmarks <- lapply(all_benchmarks,
+  function(bench_list) {
+    lapply(bench_list,
+      function(bench) {
+        filter_benchmark(bench, to_remove, join_mode = 'intersect')
+      })
+  })
+```
+
+Generate all of the FDR versus number of differentially expressed genes
+
+```{r}
+subset_nde_plot <- lapply(subset_benchmarks,
+  function(bench) {
+    suppressMessages(fdr_nde_plot(bench)) +
+      theme_hp()
+  })
+
+current_limits <- switch(simulation_mode,
+    independent = coord_cartesian(xlim = c(-0.01, 2200), ylim = c(-0.01, 0.10),
+      expand = FALSE),
+    common = coord_cartesian(xlim = c(-0.01, 2200), ylim = c(-0.01, 0.10),
+      expand = FALSE),
+    reference = coord_cartesian(xlim = c(-0.01, 700), ylim = c(-0.01, 0.10),
+      expand = FALSE)
+  )
+subset_nde_plot <- lapply(subset_nde_plot, function(x) x + current_limits)
+plot_grid(plotlist = subset_nde_plot, ncol = n_grid_columns)
+```
+
+## estimated fdr versus true fdr
+
+The black line is $x = y$.
+If you are below the line, you are conservative.
+If you are above the line, you are anti-conservative.
+
+```{r}
+subset_fdr_efdr_plot <- lapply(subset_benchmarks,
+  function(bench) {
+    suppressMessages(fdr_efdr_plot(bench)) +
+      xlim(0, 1) +
+      ylim(0, 1) +
+      theme_hp() +
+      geom_abline(slope = 1, intercept = 0, color = 'black', linetype = 3)
+  })
+
+plot_grid(plotlist = subset_fdr_efdr_plot, ncol = n_grid_columns)
+```
+
+## box plots of estimated fdr versus true fdr
+
+```{r}
+subset_bp <- lapply(subset_benchmarks,
+  function(bench) {
+    suppressMessages(boxplot_prep(bench, c(0.01, 0.05, 0.10)))
+  })
+```
+
+Looking at the estimated fdr versus the true fdr
+
+```{r}
+subset_fdr_efdr_boxplot <- lapply(subset_bp,
+  function(bp) {
+    fdr_efdr_boxplot(bp)
+  })
+plot_grid(plotlist = subset_fdr_efdr_boxplot, ncol = n_grid_columns)
+```
+
+Looking at the estimated fdr versus the power
+
+```{r}
+subset_power_efdr_boxplot <- lapply(subset_bp,
+  function(bp) {
+    power_efdr_boxplot(bp)
+  })
+plot_grid(plotlist = subset_power_efdr_boxplot, ncol = n_grid_columns)
+```
+
+Looking at the estimated fdr versus the accuracy
+
+```{r}
+subset_accuracy_efdr_boxplot <- lapply(subset_bp,
+  function(bp) {
+    ggplot(bp, aes(method, accuracy)) +
+      geom_boxplot(aes(color = method)) +
+      facet_wrap(~fdr_level)
+  })
+plot_grid(plotlist = subset_accuracy_efdr_boxplot, ncol = n_grid_columns)
+```
+
+Looking at the estimated fdr versus the specificity
+
+```{r}
+subset_specificity_efdr_boxplot <- lapply(subset_bp,
+  function(bp) {
+    ggplot(bp, aes(method, specificity)) +
+      geom_boxplot(aes(color = method)) +
+      facet_wrap(~fdr_level)
+  })
+plot_grid(plotlist = subset_specificity_efdr_boxplot, ncol = n_grid_columns)
+```
+
+```{r}
+subset_fdr_power <- lapply(subset_benchmarks,
+  function(bench) {
+    fdr_power_plot(bench)
+  })
+plot_grid(plotlist = subset_fdr_power, ncol = n_grid_columns)
+```
+
+## fdr/power curves when taking the intersection of filters
+
+```{r}
+subset_fdr <- lapply(subset_benchmarks,
+  function(bench) {
+    suppressMessages(get_fdr(bench)$pvals)
+  })
+```
+
+```{r}
+subset_fdr_power_plot <- lapply(subset_fdr,
+  function(bench) {
+    suppressMessages(fdr_efdr_power_plot(bench, start = 100, jump = 100)) +
+      theme_hp()
+  })
+
+current_limits <- switch(simulation_mode,
+    independent = coord_cartesian(xlim = c(-0.01, 0.20), ylim = c(-0.01, 0.30),
+      expand = FALSE),
+    common = coord_cartesian(xlim = c(-0.01, 0.20), ylim = c(-0.01, 0.70),
+      expand = FALSE),
+    reference = coord_cartesian(xlim = c(-0.01, 0.20), ylim = c(-0.01, 0.30),
+      expand = FALSE)
+  )
+subset_fdr_power_plot <- lapply(subset_fdr_power_plot,
+  function(x) x + current_limits)
+p <- plot_grid(plotlist = subset_fdr_power_plot, ncol = n_grid_columns)
+p
+
+filename <- file.path(base_dir, paste0('gene.pairwise_zoom_', sim_name,
+  default_extension))
+save_plot(filename, p, base_aspect_ratio = 1.6, base_height = 15)
+```
+
+
+### The full benchmarks
+
+```{r}
+all_nde_plot <- lapply(all_benchmarks,
+  function(bench) {
+    suppressMessages(fdr_nde_plot(bench)) +
+      theme_hp()
+  })
+
+current_limits <- switch(simulation_mode,
+    independent = coord_cartesian(xlim = c(-0.01, 2200), ylim = c(-0.01, 0.10),
+      expand = FALSE),
+    common = coord_cartesian(xlim = c(-0.01, 2200), ylim = c(-0.01, 0.10),
+      expand = FALSE),
+    reference = coord_cartesian(xlim = c(-0.01, 700), ylim = c(-0.01, 0.10),
+      expand = FALSE)
+  )
+all_nde_plot <- lapply(all_nde_plot, function(x) x + current_limits)
+plot_grid(plotlist = all_nde_plot, ncol = n_grid_columns)
+```
+
+```{r}
+all_fdr_efdr_plot <- lapply(all_benchmarks,
+  function(bench) {
+    suppressMessages(fdr_efdr_plot(bench)) +
+      xlim(0, 0.10) +
+      ylim(0, 0.10) +
+      theme_cowplot(25) +
+      geom_abline(slope = 1, intercept = 0, color = 'black', linetype = 3)
+  })
+plot_grid(plotlist = all_fdr_efdr_plot, ncol = n_grid_columns)
+```
+
+```{r}
+all_fdr_power <- lapply(all_benchmarks,
+  function(bench) {
+    fdr_power_plot(bench) +
+      theme_hp()
+  })
+
+current_limits <- switch(simulation_mode,
+    independent = coord_cartesian(xlim = c(-0.01, 0.10), ylim = c(-0.01, 0.30),
+      expand = FALSE),
+    common = coord_cartesian(xlim = c(-0.01, 0.10), ylim = c(-0.01, 0.70),
+      expand = FALSE),
+    reference = coord_cartesian(xlim = c(-0.01, 0.10), ylim = c(-0.01, 0.20),
+      expand = FALSE)
+  )
+all_fdr_power <- lapply(all_fdr_power, function(x) x + current_limits)
+plot_grid(plotlist = all_fdr_power, ncol = n_grid_columns)
+```
+
+# session
+
+```{r}
+sessionInfo()
+```

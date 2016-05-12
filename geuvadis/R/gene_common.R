@@ -1,3 +1,15 @@
+# most of these colors were pulled from the colorblind pallet
+# take a look at mamabear::de_benchmark.R
+method_colors <- c('DESeq' = "#56B4E9", 'DESeq2' = "#0072B2",
+  `Cuffdiff 2` = '#009E73', EBSeq = '#D55E00', edgeR = '#CC79A7',
+  voom = '#E69F00',
+  sleuth = 'firebrick1')
+
+method_colors_old <- c('DESeq' = "#56B4E9", 'DESeq2' = "#0072B2",
+  `Cuffdiff2` = '#009E73', EBSeq = '#D55E00', edgeR = '#CC79A7',
+  limmaVoom = '#E69F00',
+  sleuth = 'firebrick1')
+
 #' Load the differential expression truth
 #'
 #' This function loads the isoform level information and gene level information.
@@ -18,37 +30,6 @@ get_de_info <- function(sim_name, sim_number, ttg) {
   } else {
     tmp <- dplyr::inner_join(de_info, ttg, by = 'target_id')
   }
-
-  de_genes <- dplyr::select(tmp, ens_gene, is_de)
-  de_genes <- dplyr::group_by(de_genes, ens_gene)
-  de_genes <- dplyr::summarize(de_genes, is_de = any(is_de))
-
-  de_genes <- dplyr::rename(de_genes, target_id = ens_gene)
-  de_genes <- dplyr::mutate(de_genes, log_fc = NA)
-
-  list(de_info = de_info, de_genes = de_genes)
-}
-
-#' Load the differential expression truth (DEPRECATED)
-#'
-#' This function loads the isoform level information and gene level information.
-#' The gene level differential expression is defined by at least 1 isoform of the gene being differentially expressed.
-#'
-#' @param sim_name the name of the simulation (with respect to the results location)
-#' @param ttg the 'target_to_gene_mapping' coming from ensembl
-#' @return a list containing the gene and isoform differential expression information
-get_de_info_old <- function(sim_name, ttg) {
-  sims_dir <- file.path('../sims', sim_name)
-  base_dir <- file.path('../results', sim_name)
-
-  # de_info contains the 'true' fold change as well as which transcripts are DE
-  de_info <- read.table(
-    gzfile(file.path(sims_dir, "de_info.tsv.gz")),
-    header = TRUE,
-    stringsAsFactors = FALSE
-    )
-
-  tmp <- dplyr::inner_join(de_info, ttg, by = 'target_id')
 
   de_genes <- dplyr::select(tmp, ens_gene, is_de)
   de_genes <- dplyr::group_by(de_genes, ens_gene)
@@ -100,4 +81,35 @@ load_union_counts <- function(sim_info, which_sample) {
   counts <- as.matrix(counts)
 
   counts
+}
+
+readFeatureCounts <- function(path) {
+  suppressWarnings( result <- data.table::fread(path, data.table = TRUE) )
+
+  # pull out the columns 'gene_id' and 'count'
+  result <- result[, c(1, 7), with = FALSE]
+  data.table::setnames(result, c('gene_id', 'count'))
+
+  result
+}
+
+load_union_counts_general <- function(file_paths, sample_names) {
+  all_counts <- lapply(seq_along(file_paths),
+    function(i) {
+      counts <- readFeatureCounts(file_paths[i])
+      data.table::setnames(counts, c('count'), sample_names[i])
+    })
+  counts_table <- Reduce(
+    function(x, y) dplyr::inner_join(x, y, by = 'gene_id'),
+    all_counts
+    )
+
+  counts_table <- data.frame(counts_table, stringsAsFactors = FALSE)
+  rownames(counts_table) <- counts_table$gene_id
+  counts_table$gene_id <- NULL
+
+  counts_table <- as.matrix(counts_table)
+  storage.mode(counts_table) <- 'integer'
+
+  counts_table
 }

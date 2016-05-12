@@ -2,9 +2,10 @@
 library("SRAdb")
 library("dplyr")
 
-sqlfile <- "../db/SRAmetadb.sqlite"
+sqlfile <- "../../db/SRAmetadb.sqlite"
 if(!file.exists(sqlfile)) {
-  sqlfile <<- getSRAdbFile()
+  new_file <- getSRAdbFile()
+  file.rename(new_file, sqlfile)
 }
 
 sra_con <- dbConnect(SQLite(), sqlfile)
@@ -23,4 +24,9 @@ all_samples <- dbGetQuery(sra_con, sprintf("SELECT
 all_samples <- dplyr::mutate(all_samples,
   strain = simplify2array(strsplit(library_name, '_'))[1, ])
 
+###
+# outputs
+###
 write(all_samples$run_accession, file = '../metadata/accession.txt')
+
+write.csv(all_samples, file = '../metadata/experiment.csv', row.names = FALSE)

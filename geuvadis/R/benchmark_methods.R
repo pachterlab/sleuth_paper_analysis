@@ -4,6 +4,7 @@
 library("data.table")
 
 library("Biobase")
+library("DESeq")
 library("DESeq2")
 library("EBSeq")
 library("edgeR")
@@ -23,6 +24,24 @@ get_human_gene_names <- function() {
 
   ttg
 }
+
+get_mouse_gene_names <- function() {
+  mart <- biomaRt::useMart(biomart = "ENSEMBL_MART_ENSEMBL",
+    dataset = "mmusculus_gene_ensembl",
+    host = "dec2015.archive.ensembl.org")
+    # host = "ensembl.org")
+  ttg <- biomaRt::getBM(
+    attributes = c("ensembl_transcript_id", "transcript_version",
+    "ensembl_gene_id", "external_gene_name", "description",
+    "transcript_biotype"),
+    mart = mart)
+  ttg <- dplyr::rename(ttg,
+    ens_gene = ensembl_gene_id, ext_gene = external_gene_name)
+  ttg <- dplyr::mutate(ttg, target_id = paste(ensembl_transcript_id,
+    transcript_version, sep="."))
+  ttg
+}
+
 
 #' parse the simulation name
 #'
@@ -54,6 +73,18 @@ edgeR_filter <- function(mat, ...) {
 
 DESeq2_filter <- function(mat, ...) {
   rowSums(mat) > 1
+}
+
+DESeq_filter <- function(mat, ...) {
+  # a modified version of the DESeq filter to first remove things that are 0
+  # before doing the quantile filter
+  nonzero <- DESeq2_filter(mat)
+  rs <- rowSums(mat[nonzero, ])
+  theta <- 0.4
+  use <- (rs > quantile(rs, probs=theta))
+  ret <- nonzero
+  ret[nonzero] <- use
+  ret
 }
 
 #' create benchmark objects against a reference
@@ -204,6 +235,64 @@ load_isoform_results_intersect <- function(
   all_results
 }
 
+###
+# TODO: deprecate load_isoform_results_intersect and replace with
+# load_isoform_results_intersect_df
+###
+#' @param sim_name a simulation name such as 'isoform_3_3_20_1_1'
+#' @param which_sample which sample (replication) to load (an integer from 1 to N)
+#' @param method_filtering if \code{TRUE}, use the methods own filtering.
+#' Otherwise, use the filtering provided from sleuth.
+#' @param ... additional arguments passed to \code{run_sleuth}
+#' NOTE: cuffdiff uses a filter method internally and it cannot be changed
+load_isoform_results_intersect_df <- function(
+  sample_to_condition,
+  method_label,
+  method_fit_function,
+  include_empirical_bayes = FALSE,
+  ...) {
+
+  sample_to_condition <- as.data.frame(sample_to_condition,
+    stringsAsFactors = FALSE)
+  rownames(sample_to_condition) <- sample_to_condition$sample
+
+  message('### Loading data with sleuth...')
+  so_data <- sleuth_prep(sample_to_condition, ~1, max_bootstrap = 3)
+  obs_raw <- sleuth:::spread_abundance_by(so_data$obs_raw, "est_counts")
+  rm(so_data)
+
+  obs_raw <- obs_raw[, rownames(sample_to_condition)]
+
+  s_which_filter <- sleuth_filter(obs_raw, ...)
+
+  message('### Running method: ', method_label)
+  method_result <- method_fit_function(obs_raw, sample_to_condition,
+    s_which_filter)
+  sir <- run_sleuth(sample_to_condition, gene_mode = NULL,
+    filter_target_id = method_result$filter,
+    include_empirical_bayes = FALSE)
+
+  all_results <- Filter(is.data.frame, sir)
+
+  message('### Running sleuth...')
+  if (include_empirical_bayes) {
+    seb <- run_sleuth(sample_to_condition, gene_mode = NULL,
+      filter_target_id = method_result$filter,
+      include_empirical_bayes = TRUE)
+    seb <- Filter(is.data.frame, seb)
+    names(seb) <- paste0(names(seb), '.eb')
+    all_results <- c(all_results, seb)
+  }
+
+  # TODO: adjust the fdr based off of the filtering scheme
+  # e.g. take the intersection of the tests and recompute the fdr
+  # This ensures that the calibration tests can be comparable
+
+  all_results[[method_label]] <- method_result$result
+
+  all_results
+}
+
 load_gene_results_intersect <- function(
   sim_name,
   which_sample,
@@ -263,6 +352,8 @@ load_gene_results_intersect <- function(
   } else {
     message('### running gene lifting')
     slr <- run_sleuth(sample_to_condition, gene_mode = 'lift')
+    slr <- Filter(is.data.frame, slr)
+    names(slr) <- paste0(names(slr), '.lift')
   }
 
   message('### running gene aggregation')
@@ -299,28 +390,40 @@ limma_filter_and_run <- function(count_matrix, stc, sleuth_filter) {
 }
 
 # DEPRECATED
-DESeq2_filter_and_run <- function(count_matrix, stc, sleuth_filter) {
-  # we should check if taking the intersection of results does better
-  count_matrix <- round(count_matrix)
-  mode(count_matrix) <- 'integer'
-  which_targets <- DESeq2_filter(count_matrix)
-  cds <- make_count_data_set(count_matrix[which_targets, ], stc)
-  res <- runDESeq2(cds, FALSE, FALSE)
-
-  sleuth_filter <- sleuth_filter & which_targets
-  sleuth_filter <- names(which(sleuth_filter))
-
-  list(result = res, filter = sleuth_filter)
-}
+# DESeq2_filter_and_run <- function(count_matrix, stc, sleuth_filter) {
+#   # we should check if taking the intersection of results does better
+#   count_matrix <- round(count_matrix)
+#   mode(count_matrix) <- 'integer'
+#   which_targets <- DESeq2_filter(count_matrix)
+#   cds <- make_count_data_set(count_matrix[which_targets, ], stc)
+#   res <- runDESeq2(cds, FALSE, FALSE)
+#
+#   sleuth_filter <- sleuth_filter & which_targets
+#   sleuth_filter <- names(which(sleuth_filter))
+#
+#   list(result = res, filter = sleuth_filter)
+# }
 
 DESeq2_filter_and_run_intersect <- function(count_matrix, stc, sleuth_filter) { # nolint
-  # we should check if taking the intersection of results does better
   count_matrix <- round(count_matrix)
   mode(count_matrix) <- 'integer'
   which_targets <- DESeq2_filter(count_matrix)
   sleuth_filter <- sleuth_filter & which_targets
   cds <- make_count_data_set(count_matrix[sleuth_filter, ], stc)
   res <- runDESeq2(cds, FALSE, FALSE)
+
+  sleuth_filter <- names(which(sleuth_filter))
+
+  list(result = res, filter = sleuth_filter)
+}
+
+DESeq_filter_and_run <- function(count_matrix, stc, sleuth_filter) { # nolint
+  count_matrix <- round(count_matrix)
+  mode(count_matrix) <- 'integer'
+  which_targets <- DESeq_filter(count_matrix)
+  sleuth_filter <- sleuth_filter & which_targets
+  cds <- make_count_data_set(count_matrix[sleuth_filter, ], stc)
+  res <- runDESeq(cds, FALSE, FALSE)
 
   sleuth_filter <- names(which(sleuth_filter))
 
@@ -341,11 +444,80 @@ edgeR_filter_and_run <- function(count_matrix, stc, sleuth_filter) {
   list(result = res, filter = sleuth_filter)
 }
 
+lfc_filter_and_run <- function(count_matrix, stc, sleuth_filter) {
+  which_targets <- edgeR_filter(count_matrix)
+  sleuth_filter <- sleuth_filter & which_targets
+
+  conditionA <- dplyr::filter(stc, condition == 'A')$sample
+  conditionB <- dplyr::filter(stc, condition == 'B')$sample
+
+  counts <- count_matrix[sleuth_filter, ]
+  sf <- DESeq2::estimateSizeFactorsForMatrix(counts)
+  counts_norm <- t(t(counts) / sf)
+
+  B <- rowMeans(counts_norm[, conditionB])
+  A <- rowMeans(counts_norm[, conditionA])
+  lfc <- log(B) - log(A)
+
+  res <- data.frame(target_id = names(lfc), abs_lfc = abs(lfc))
+  res <- dplyr::arrange(res, desc(abs_lfc))
+  res <- dplyr::mutate(res, test_stat = rank(-abs_lfc,
+    ties.method= "random") / length(-abs_lfc))
+  res <- dplyr::select(res, target_id, pval = test_stat)
+  res <- dplyr::mutate(res, qval = pval)
+
+  sleuth_filter <- names(which(sleuth_filter))
+
+  list(result = res, filter = sleuth_filter)
+}
+
+geometric_lfc_filter_and_run <- function(count_matrix, stc, sleuth_filter) {
+  which_targets <- edgeR_filter(count_matrix)
+  sleuth_filter <- sleuth_filter & which_targets
+
+  conditionA <- dplyr::filter(stc, condition == 'A')$sample
+  conditionB <- dplyr::filter(stc, condition == 'B')$sample
+
+  counts <- count_matrix[sleuth_filter, ]
+  sf <- DESeq2::estimateSizeFactorsForMatrix(counts)
+  counts_norm <- t(t(counts) / sf)
+  counts_norm <- log(counts_norm + 0.5)
+
+  B <- rowMeans(counts_norm[, conditionB])
+  A <- rowMeans(counts_norm[, conditionA])
+  lfc <- B - A
+
+  res <- data.frame(target_id = names(lfc), abs_lfc = abs(lfc))
+  res <- dplyr::arrange(res, desc(abs_lfc))
+  res <- dplyr::mutate(res, test_stat = rank(-abs_lfc,
+    ties.method= "random") / length(-abs_lfc))
+  res <- dplyr::select(res, target_id, pval = test_stat)
+  res <- dplyr::mutate(res, qval = pval)
+
+  sleuth_filter <- names(which(sleuth_filter))
+
+  list(result = res, filter = sleuth_filter)
+}
+
 cuffdiff_filter_and_run <- function(count_matrix, stc, sleuth_filter) {
   # ignore the count_matrix
   base_name <- dirname(dirname(stc$path[1]))
   base_name <- file.path(base_name, 'results', 'cuffdiff')
   res <- get_cuffdiff(base_name)$isoform
+  res <- dplyr::filter(res, status == 'OK')
+
+  sleuth_filter <- names(which(sleuth_filter))
+
+  sleuth_filter <- res$target_id
+
+  list(result = res, filter = sleuth_filter)
+}
+
+cuffdiff_filter_and_run_gene <- function(count_matrix, stc, sleuth_filter) {
+  # ignore the count_matrix
+  base_name <- dirname(dirname(stc$path[1]))
+  base_name <- file.path(base_name, 'results', 'cuffdiff')
+  res <- get_cuffdiff(base_name)$gene
   res <- dplyr::filter(res, status == 'OK')
 
   sleuth_filter <- names(which(sleuth_filter))
@@ -613,6 +785,32 @@ runDESeq2 <- function(e, as_gene = TRUE, compute_filter = FALSE) {
     as_gene = as_gene)
 }
 
+runDESeq <- function(e, as_gene = TRUE, compute_filter = FALSE) {
+  cds <- newCountDataSet(exprs(e), pData(e)$condition)
+  if (compute_filter) {
+    rs <- rowSums ( counts ( cds ))
+    theta <- 0.4
+    use <- (rs > quantile(rs, probs=theta))
+    # cds <- cds[use, ]
+    cds <- newCountDataSet(counts(cds)[use, ], pData(e)$condition)
+  }
+  cds <- DESeq::estimateSizeFactors(cds)
+  cds <- DESeq::estimateDispersions(cds)
+  suppressWarnings({capture.output({fit1 <- DESeq::fitNbinomGLMs(cds, count ~ condition)})})
+  suppressWarnings({capture.output({fit0 <- DESeq::fitNbinomGLMs(cds, count ~ 1)})})
+  pvals <- DESeq::nbinomGLMTest(fit1, fit0)
+  # pvals[rowSums(exprs(e)) == 0] <- NA
+  padj <- p.adjust(pvals,method="BH")
+  padj[is.na(padj)] <- 1
+  # return(list(pvals=pvals, padj=padj, beta=fit1$conditionB))
+  rename_target_id(
+    data.frame(target_id = rownames(cds),
+      pval = pvals, qval = padj,
+      stringsAsFactors = FALSE),
+    as_gene = as_gene)
+}
+
+
 runEdgeR <- function(e, as_gene = TRUE, compute_filter = FALSE) {
   design <- model.matrix(~ pData(e)$condition)
   dgel <- DGEList(exprs(e))
@@ -725,6 +923,7 @@ runEBSeq <- function(e, as_gene = TRUE, method_filtering = FALSE) {
       ),
     as_gene = as_gene)
 }
+
 
 # these methods used right now and need to be updated
 

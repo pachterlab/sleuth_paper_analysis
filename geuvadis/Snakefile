@@ -1,5 +1,7 @@
 include: '../config.py'
 
+from os.path import isfile
+
 isoform_simulations = [
     'sims/isoform_{a}_{b}_{rep}_{seed}_{sf_mode}'.
         format(a = 3, b = 3, rep = 5, seed = 1, sf_mode = 1)
@@ -57,13 +59,13 @@ generate_reads(isoform_simulations[0])
 def generate_files(specific_replication, suffix):
     return [b + suffix for b in generate_base(specific_replication)]
 
-isoform_reads = [generate_reads(current_reads) for current_reads in isoform_simulations]
-isoform_bam = [b + '/hisat.bam' for b in generate_base(isoform_simulations[0])]
-isoform_kallisto = [b + '/kallisto/abundance.h5' for b in generate_base(isoform_simulations[0])]
-isoform_feature_counts = [b + '/featureCounts.txt' for b in generate_base(isoform_simulations[0])]
+# isoform_reads = [generate_reads(current_reads) for current_reads in isoform_simulations]
+# isoform_bam = [b + '/hisat.bam' for b in generate_base(isoform_simulations[0])]
+# isoform_kallisto = [b + '/kallisto/abundance.h5' for b in generate_base(isoform_simulations[0])]
+# isoform_feature_counts = [b + '/featureCounts.txt' for b in generate_base(isoform_simulations[0])]
 # print(isoform_feature_counts)
 
-print(generate_files(isoform_simulations[0], '/hisat.bam'))
+# print(generate_files(isoform_simulations[0], '/hisat.bam'))
 
 # print(isoform_reads[0][0:5])
 # print(isoform_bam[0:4])
@@ -74,6 +76,7 @@ def get_ids(wildcards, file_prefix, file_suffix):
     info = get_simulation_info(experiment)
 
     # prefix = '{0}/{1}/exp_{2}/{3}'.format(file_prefix, experiment, num, )
+
 
 
 rule all:
@@ -102,10 +105,53 @@ rule all:
         expand('sims/gcd_3_3_20_1_2/exp_{n}/results/sleuth',
             n = range(1, 20 + 1)),
         expand('sims/gcd_3_3_20_1_2/exp_{n}/results/featureCounts/counts.tsv',
-            n = range(1, 20 + 1))
+            n = range(1, 20 + 1)),
+        expand('sims/gcd_3_3_20_1_2/exp_{n}/results/cuffdiff/isoform_exp.diff',
+            n = range(1, 20 + 1)),
 
+        expand('sims/gfr_3_3_20_42_2/exp_{n}/results/sleuth',
+            n = range(1, 20 + 1)),
+        expand('sims/gfr_3_3_20_42_2/exp_{n}/results/featureCounts/counts.tsv',
+            n = range(1, 20 + 1)),
+        expand('sims/gfr_3_3_20_42_2/exp_{n}/results/cuffdiff/isoform_exp.diff',
+            n = range(1, 20 + 1)),
         # isoform_simulations[0:5],
         # isoform_reads[0:5]
+
+        # run BitSeq on 1 sample:
+        expand('sims/gfr_3_3_20_42_2/exp_{num}/{id}/bowtie.bam',
+            num = [1], id = range(1, 7)),
+        # expand('sims/{experiment}/exp_{num}/{id}/BitSeq.rpkm',
+        #     experiment = 'gfr_3_3_20_42_2', num = [1], id = range(1, 7)),
+        expand('sims/{experiment}/exp_{num}/{id}/BitSeq_cli.{ext}',
+            experiment = 'gfr_3_3_20_42_2', num = [1], id = range(1, 7),
+            ext = ['tr', 'prob']),
+
+        expand('sims/{experiment}/exp_{num}/{id}/BitSeq_cli.{ext}',
+            experiment = 'gfr_3_3_20_42_2', num = [1], id = range(1, 7),
+            ext = ['rpkm']),
+
+        # do a large experiment so that we can do permutations
+        'sims/gfr_10_11_1_43_2/exp_1/results/cuffdiff/isoform_exp.diff',
+        'sims/gfr_10_11_1_43_2/exp_1/results/sleuth',
+        'sims/gfr_10_11_1_43_2/exp_1/results/featureCounts/counts.tsv',
+
+        expand('results/{experiment}/isoform_benchmarks.rds',
+            experiment = ['gfr_3_3_20_42_2']),
+
+        expand('results/{experiment}/gene_benchmarks.rds',
+            experiment = ['gfr_3_3_20_42_2']),
+        expand('results/{experiment}/benchmark_report.html',
+            experiment = ['gfr_3_3_20_42_2', 'gcd_3_3_20_1_2',
+            'isoform_3_3_20_1_1']),
+
+        expand('results/training/gfr_10_11_1_43_2/exp_1/{p}/results/cuffdiff/isoform_exp.diff',
+            p = range(1, 20 + 1)),
+        expand('results/validation/gfr_10_11_1_43_2/exp_1/{p}/results/cuffdiff/isoform_exp.diff',
+            p = range(1, 20 + 1)),
+        'results/resampling/resampling_report.html',
+
+        'results/resampling/resampling_figures_merge.html'
 
 
 rule geuvadis_metadata:
@@ -144,6 +190,8 @@ rule gen_sim_script_isoform:
         ' {wildcards.seed}'
         ' {wildcards.sf}'
 
+# gcd - gene differential expression with change in the same direction
+#
 # this simulation deals with the "best case" scenario when doing union counting.
 # the simulation is performed by selecting a set of genes to be differentially expressed,
 # then making every single transcript within that gene differentially expressed.
@@ -157,6 +205,29 @@ rule gen_sim_script_geneCommonDirection:
     shell:
         source_r('R', 'gen_sim_gcd.R') + ' '
         'gcd_{wildcards.n_a}_{wildcards.n_b}_{wildcards.n_sim}_{wildcards.seed}_{wildcards.sf} '
+        ' {wildcards.n_sim}'
+        ' {wildcards.n_a}'
+        ' {wildcards.n_b}'
+        ' {wildcards.seed}'
+        ' {wildcards.sf}'
+
+# gfr - gene differential expression from reference
+#
+# this simulation uses the fold changes learned from a particular data set.
+# it then simulates differential expression by choosing a gene to be differentially expressed,
+# then making all of its fold changes the same as a gene in the reference data.
+# the ranks of the gene expression are also matched so that we do not get
+# extreme full changes for very highly expressed transcripts
+rule gen_sim_script_geneFromReference:
+    input:
+        'results/prep_fin.RData',
+        '../cuffdiff2_analysis/results/fc.rds'
+    output:
+        'sims/gfr_{n_a,\d+}_{n_b}_{n_sim}_{seed,\d+}_{sf,\d+}',
+        'sims/gfr_{n_a,\d+}_{n_b}_{n_sim}_{seed}_{sf}/sims.rds'
+    shell:
+        source_r('R', 'gen_sim_gfr.R') + ' '
+        'gfr_{wildcards.n_a}_{wildcards.n_b}_{wildcards.n_sim}_{wildcards.seed}_{wildcards.sf} '
         ' {wildcards.n_sim}'
         ' {wildcards.n_a}'
         ' {wildcards.n_b}'
@@ -186,7 +257,7 @@ rule hisat_alignment:
         'sims/{experiment}/exp_{num}/{id}/sim_{id}_2.fq.gz'
     output:
         'sims/{experiment}/exp_{num}/{id}/hisat.bam'
-    threads: 20
+    threads: 10
     benchmark:
         'benchmark/{experiment}/exp_{num}/{id}/hisat/benchmark.json'
     shell:
@@ -254,7 +325,7 @@ rule cuffquant:
         TRANSCRIPTOME_GTF
     output:
         'sims/{experiment}/exp_{num}/{id}/cuffquant/abundances.cxb'
-    threads: 7
+    threads: 5
     benchmark:
         'benchmark/{experiment}/exp_{num}/{id}/cuffquant/benchmark.json'
     params:
@@ -275,12 +346,10 @@ def get_cuffdiff(wildcards):
     info = get_simulation_info(experiment)
     num = wildcards['num']
     ids = range(1, info['a'] + info['b'] + 1)
-
     return expand('sims/{experiment}/exp_{num}/{id}/cuffquant/abundances.cxb',
         experiment = experiment,
         num = num,
         id = ids)
-
 rule cuffdiff:
     input:
         get_cuffdiff
@@ -342,7 +411,6 @@ def get_sleuth(wildcards):
         experiment = experiment,
         num = num,
         id = ids)
-
 rule sleuth:
     input:
         get_sleuth
@@ -350,3 +418,384 @@ rule sleuth:
         'sims/{experiment}/exp_{num,\d+}/results/sleuth'
     shell:
         'touch {output}'
+
+N_SIM = 20
+def get_gene_dependencies(wildcards):
+    exp = wildcards['experiment']
+    ret = []
+    ret += expand('sims/{exp}/exp_{num}/results/sleuth', exp = exp,
+        num = range(1, N_SIM + 1))
+    ret += expand('sims/{exp}/exp_{num}/results/cuffdiff/gene_exp.diff', exp = exp,
+        num = range(1, N_SIM + 1))
+    ret += expand('sims/{exp}/exp_{num}/results/featureCounts/counts.tsv', exp = exp,
+        num = range(1, N_SIM + 1))
+    return ret
+rule benchmark_gene:
+    input:
+        get_gene_dependencies
+    output:
+        'results/{experiment}/gene_benchmarks.rds'
+    threads:
+        N_SIM
+    shell:
+        source_r('R', 'bench_gene.R') + ' {threads} {wildcards.experiment}'
+
+rule benchmark_gene_filter:
+    input:
+        get_gene_dependencies
+    output:
+        'results/{experiment}/gene_benchmarks_filter.rds'
+    threads:
+        N_SIM
+    shell:
+        source_r('R', 'best_filter_gene.R') + ' {threads} {wildcards.experiment}'
+
+N_SIM = 20
+def get_isoform_dependencies(wildcards):
+    exp = wildcards['experiment']
+    ret = []
+    ret += expand('sims/{exp}/exp_{num}/results/sleuth', exp = exp,
+        num = range(1, N_SIM + 1))
+    ret += expand('sims/{exp}/exp_{num}/results/cuffdiff/isoform_exp.diff', exp = exp,
+        num = range(1, N_SIM + 1))
+    return ret
+rule benchmark_isoform:
+    input:
+        get_isoform_dependencies
+    output:
+        'results/{experiment}/isoform_benchmarks.rds'
+    threads:
+        N_SIM
+    shell:
+        source_r('R', 'bench_isoform.R') + ' {threads} {wildcards.experiment}'
+
+rule benchmark_isoform_filter:
+    input:
+        get_isoform_dependencies
+    output:
+        'results/{experiment}/isoform_benchmarks_filter.rds'
+    threads:
+        N_SIM
+    shell:
+        source_r('R', 'best_filter_isoform.R') + ' {threads} {wildcards.experiment}'
+
+rule benchmark_report:
+    input:
+        'results/{experiment}/isoform_benchmarks.rds',
+        'results/{experiment}/isoform_benchmarks_filter.rds',
+        'results/{experiment}/gene_benchmarks.rds',
+        'results/{experiment}/gene_benchmarks_filter.rds'
+    output:
+        'results/{experiment}/benchmark_report.html'
+    threads:
+        1
+    shell:
+        source_rmd('R', 'benchmark_report.Rmd',
+            '../results/{wildcards.experiment}/benchmark_report.html') +
+        ' {threads} {wildcards.experiment}'
+
+###
+# compute permutations
+###
+
+TRAINING_A = []
+TRAINING_B = []
+TRAINING_FILE_A = 'metadata/training_a.txt'
+TRAINING_FILE_B = 'metadata/training_b.txt'
+if isfile(TRAINING_FILE_A) and isfile(TRAINING_FILE_B):
+    TRAINING_A = get_sample_ids(TRAINING_FILE_A)
+    TRAINING_B = get_sample_ids(TRAINING_FILE_B)
+    # print(TRAINING_A)
+else:
+    # force running the init
+    print('Warning: the init script has not yet been run. Running now.')
+    # rule:
+    #     input: rules.init.output
+
+VALIDATION_FILE_A = 'metadata/validation_a.txt'
+VALIDATION_FILE_B = 'metadata/validation_b.txt'
+if isfile(VALIDATION_FILE_A) and isfile(VALIDATION_FILE_B):
+    VALIDATION_A = get_sample_ids(VALIDATION_FILE_A)
+    VALIDATION_B = get_sample_ids(VALIDATION_FILE_B)
+    # print(VALIDATION_A)
+else:
+    # force running the init
+    print('Warning: the init script has not yet been run. Running now.')
+    # rule:
+    #     input: rules.init.output
+
+def get_cuffdiff_training(wildcards):
+    info = wildcards
+    p_num = int(info['p']) - 1
+    a = TRAINING_A[p_num].split(' ')
+    b = TRAINING_B[p_num].split(' ')
+    all_files = a + b
+    return expand('sims/{type}_{a}_{b}_{n_sim}_{seed}_{sf}/exp_{num}/{i}/cuffquant/abundances.cxb',
+        type = info['type'], a = info['n_a'], b = info['n_b'], n_sim = info['n_sim'],
+        seed = info['seed'], sf = info['sf'],
+        num = info['num'],
+        i = all_files)
+rule cuffdiff_training:
+    input:
+        'sims/{type}_{n_a,\d+}_{n_b}_{n_sim}_{seed,\d+}_{sf,\d+}/sims.rds',
+        get_cuffdiff_training
+    output:
+        'results/training/{type}_{n_a}_{n_b}_{n_sim}_{seed}_{sf}/exp_{num,\d+}/{p}/results/cuffdiff',
+        'results/training/{type}_{n_a}_{n_b}_{n_sim}_{seed}_{sf}/exp_{num}/{p}/results/cuffdiff/isoform_exp.diff',
+        'results/training/{type}_{n_a}_{n_b}_{n_sim}_{seed}_{sf}/exp_{num}/{p}/results/cuffdiff/gene_exp.diff'
+    threads: 3
+    run:
+        p = int(wildcards['p']) - 1
+        info = wildcards
+        a = TRAINING_A[p].split(' ')
+        b = TRAINING_B[p].split(' ')
+        a = expand('sims/{type}_{a}_{b}_{n_sim}_{seed}_{sf}/exp_{num}/{i}/cuffquant/abundances.cxb',
+            type = info['type'], a = info['n_a'], b = info['n_b'], n_sim = info['n_sim'],
+            seed = info['seed'], sf = info['sf'],
+            num = info['num'],
+            i = a)
+        b = expand('sims/{type}_{a}_{b}_{n_sim}_{seed}_{sf}/exp_{num}/{i}/cuffquant/abundances.cxb',
+            type = info['type'], a = info['n_a'], b = info['n_b'], n_sim = info['n_sim'],
+            seed = info['seed'], sf = info['sf'],
+            num = info['num'],
+            i = b)
+        cmd = ' '.join([UPDATED_PATH,
+            'cuffdiff',
+            '-p', str(threads),
+            '-o', output[0],
+            '-b', GENOME_FA,
+            '-u',
+            '-q',
+            TRANSCRIPTOME_GTF,
+            ','.join(a),
+            ','.join(b)
+            ])
+        print(cmd)
+        shell(cmd)
+
+def get_cuffdiff_validation(wildcards):
+    info = wildcards
+    p_num = int(info['p']) - 1
+    a = VALIDATION_A[p_num].split(' ')
+    b = VALIDATION_B[p_num].split(' ')
+    all_files = a + b
+    return expand('sims/{type}_{a}_{b}_{n_sim}_{seed}_{sf}/exp_{num}/{i}/cuffquant/abundances.cxb',
+        type = info['type'], a = info['n_a'], b = info['n_b'], n_sim = info['n_sim'],
+        seed = info['seed'], sf = info['sf'],
+        num = info['num'],
+        i = all_files)
+rule cuffdiff_validation:
+    input:
+        'sims/{type}_{n_a,\d+}_{n_b}_{n_sim}_{seed,\d+}_{sf,\d+}/sims.rds',
+        get_cuffdiff_validation
+    output:
+        'results/validation/{type}_{n_a}_{n_b}_{n_sim}_{seed}_{sf}/exp_{num,\d+}/{p}/results/cuffdiff',
+        'results/validation/{type}_{n_a}_{n_b}_{n_sim}_{seed}_{sf}/exp_{num}/{p}/results/cuffdiff/isoform_exp.diff',
+        'results/validation/{type}_{n_a}_{n_b}_{n_sim}_{seed}_{sf}/exp_{num}/{p}/results/cuffdiff/gene_exp.diff'
+    threads: 3
+    run:
+        p = int(wildcards['p']) - 1
+        info = wildcards
+        a = VALIDATION_A[p].split(' ')
+        b = VALIDATION_B[p].split(' ')
+        a = expand('sims/{type}_{a}_{b}_{n_sim}_{seed}_{sf}/exp_{num}/{i}/cuffquant/abundances.cxb',
+            type = info['type'], a = info['n_a'], b = info['n_b'], n_sim = info['n_sim'],
+            seed = info['seed'], sf = info['sf'],
+            num = info['num'],
+            i = a)
+        b = expand('sims/{type}_{a}_{b}_{n_sim}_{seed}_{sf}/exp_{num}/{i}/cuffquant/abundances.cxb',
+            type = info['type'], a = info['n_a'], b = info['n_b'], n_sim = info['n_sim'],
+            seed = info['seed'], sf = info['sf'],
+            num = info['num'],
+            i = b)
+        cmd = ' '.join([UPDATED_PATH,
+            'cuffdiff',
+            '-p', str(threads),
+            '-o', output[0],
+            '-b', GENOME_FA,
+            '-u',
+            '-q',
+            TRANSCRIPTOME_GTF,
+            ','.join(a),
+            ','.join(b)
+            ])
+        print(cmd)
+        shell(cmd)
+
+rule resampling_report:
+    input:
+        'results/gfr_10_11_1_43_2/isoform_self_benchmark.rds',
+        'results/gfr_10_11_1_43_2/gene_self_benchmark.rds'
+    output:
+        'results/resampling/resampling_report.html'
+    shell:
+        source_rmd('R', 'fdr_resampling.Rmd', '../{output}')
+
+rule resampling_isoform:
+    input:
+        'sims/gfr_10_11_1_43_2/exp_1/results/sleuth',
+        expand('results/training/gfr_10_11_1_43_2/exp_1/{p}/results/cuffdiff/isoform_exp.diff',
+            p = range(1, 20 + 1)),
+        expand('results/validation/gfr_10_11_1_43_2/exp_1/{p}/results/cuffdiff/isoform_exp.diff',
+            p = range(1, 20 + 1))
+    output:
+        'results/gfr_10_11_1_43_2/isoform_self_benchmark.rds'
+    threads:
+        20
+    shell:
+        source_r('R', 'resampling_benchmarks.R') +
+        ' {threads}'
+
+rule resampling_gene:
+    input:
+        'sims/gfr_10_11_1_43_2/exp_1/results/sleuth',
+        expand('results/training/gfr_10_11_1_43_2/exp_1/{p}/results/cuffdiff/isoform_exp.diff',
+            p = range(1, 20 + 1)),
+        expand('results/validation/gfr_10_11_1_43_2/exp_1/{p}/results/cuffdiff/isoform_exp.diff',
+            p = range(1, 20 + 1)),
+        'sims/gfr_10_11_1_43_2/exp_1/results/featureCounts/counts.tsv'
+    output:
+        'results/gfr_10_11_1_43_2/gene_self_benchmark.rds'
+    threads:
+        20
+    shell:
+        source_r('R', 'resampling_benchmarks_gene.R') +
+        ' {threads}'
+
+rule resampling_figures_merge:
+    input:
+        'results/resampling/resampling_report.html'
+    output:
+        'results/resampling/resampling_figures_merge.html'
+    shell:
+        source_rmd('R', 'self_fdr_figures.Rmd', '../{output}')
+
+###
+# required only for BitSeq
+###
+
+rule bowtie_alignment:
+    input:
+        'sims/{experiment}/exp_{num}/{id}/sim_{id}_1.fq.gz',
+        'sims/{experiment}/exp_{num}/{id}/sim_{id}_2.fq.gz'
+    output:
+        'sims/{experiment}/exp_{num}/{id}/bowtie.bam'
+    threads: 10
+    benchmark:
+        'benchmark/{experiment}/exp_{num}/{id}/bowtie/benchmark.json'
+    shell:
+        '{UPDATED_PATH}'
+        ' bowtie'
+        ' -q -v 3 -3 0 -a -m 100 --sam' # recommended arguments from BitSeq
+        ' -p {threads}'
+        ' {BOWTIE_INDEX}'
+        ' -1 <(zcat {input[0]})'
+        ' -2 <(zcat {input[1]})'
+        ' | '
+        '{UPDATED_PATH} samtools view -Sb -'
+        ' > '
+        '{output}'
+
+# IMPORTANT: for some reason, BitSeq can only run 1 quantification at a time
+# if you try to run these in parallel, you will get an error like this:
+# [time: +0.03 m]
+# [time: +0.03 m]
+# [time: +0.03 m]
+# [time: +0.03 m]
+#
+#  *** caught segfault ***
+# address (nil), cause 'memory not mapped'
+#
+# Traceback:
+#  1: .C("_parseAlignment", as.integer(argc), as.character(args))
+#  2: parseAlignment(alignFile, probF, trSeqFile, trInfoFile = trF,     uniform = uniform, limitA = limitA, expressionFile = exprFile,     pretend = pretend)
+#  3: getExpression(alignment_file, transcriptome, out, seed = seed)
+#  4: system.time(res <- getExpression(alignment_file, transcriptome,     out, seed = seed))
+#  5: eval(expr, envir, enclos)
+#  6: eval(ei, envir)
+#  7: withVisible(eval(ei, envir))
+#  8: source("BitSeq_getExpression.R")
+# aborting ...
+# [time: +0.03 m]
+# [time: +0.02 m]
+# Error in job BitSeq_expression while creating output files sims/gfr_3_3_20_42_2/exp_1/6/BitSeq.mean, sims/gfr_3_3_20_42_2/exp_1/6/BitSeq.prob, sims/gfr_3_3_20_42_2/exp_1/6/BitSeq.rpkm, sims/gfr_3_3_20_42_2/exp_1/6/BitSeq.thetaMe
+# ans, sims/gfr_3_3_20_42_2/exp_1/6/BitSeq.tr.
+# RuleException:
+# CalledProcessError in line 709 of /home/hjp/sleuth_paper_analysis/geuvadis/Snakefile:
+# Command 'Rscript --vanilla --default-packages=methods,stats,utils -e 'setwd("R")' -e 'source("BitSeq_getExpression.R")' ../sims/gfr_3_3_20_42_2/exp_1/6/bowtie.bam /home/hjp/sleuth_paper_analysis/annotation/Homo_sapiens.GRCh38.cd
+# na.all.rel80.fa sims/gfr_3_3_20_42_2/exp_1/6/BitSeq' returned non-zero exit status -11
+
+rule BitSeq_expression:
+    input:
+        'sims/{experiment}/exp_{num}/{id}/bowtie.bam'
+    params:
+        prefix = '../sims/{experiment}/exp_{num}/{id}/BitSeq'
+    threads: 1
+    output:
+        'sims/{experiment}/exp_{num}/{id}/BitSeq.mean',
+        # 'sims/{experiment}/exp_{num}/{id}/BitSeq.prob',
+        'sims/{experiment}/exp_{num}/{id}/BitSeq.rpkm',
+        'sims/{experiment}/exp_{num}/{id}/BitSeq.thetaMeans',
+        'sims/{experiment}/exp_{num}/{id}/BitSeq.tr'
+    benchmark:
+        'benchmark/{experiment}/exp_{num}/{id}/BitSeq/benchmark.json'
+    shell:
+        source_r('R', 'BitSeq_getExpression.R') +
+        ' ../{input} {TRANSCRIPTOME_FA} {params.prefix}'
+
+rule BitSeq_expression_parseAlignment:
+    input:
+        'sims/{experiment}/exp_{num}/{id}/bowtie.bam'
+    params:
+        prefix = 'sims/{experiment}/exp_{num}/{id}/BitSeq_cli'
+    threads: 1
+    output:
+        # 'sims/{experiment}/exp_{num}/{id}/BitSeq.mean',
+        # 'sims/{experiment}/exp_{num}/{id}/BitSeq.prob',
+        # 'sims/{experiment}/exp_{num}/{id}/BitSeq.thetaMeans',
+        # 'sims/{experiment}/exp_{num}/{id}/BitSeq.tr',
+        'sims/{experiment}/exp_{num}/{id}/BitSeq_cli.prob',
+        'sims/{experiment}/exp_{num}/{id}/BitSeq_cli.tr'
+    benchmark:
+        'benchmark/{experiment}/exp_{num}/{id}/BitSeq_cli/parseAlignment.json'
+    shell:
+        '{UPDATED_PATH} '
+        'parseAlignment'
+        ' {input}'
+        ' -o {output[0]}'
+        ' --trSeqFile {TRANSCRIPTOME_FA}'
+        ' --trInfoFile {output[1]}'
+        ' --uniform'
+        ' --verbose'
+        # ' data1-1.sam -o data1-1.prob --trSeqFile ensemblGenes.fasta --trInfoFile ensemblGenes.tr --uniform --verbose'
+
+rule BitSeq_expression_getExpression:
+    input:
+        'sims/{experiment}/exp_{num}/{id}/BitSeq_cli.prob',
+        'sims/{experiment}/exp_{num}/{id}/BitSeq_cli.tr'
+    params:
+        prefix = 'sims/{experiment}/exp_{num}/{id}/BitSeq_cli'
+    output:
+        'sims/{experiment}/exp_{num}/{id}/BitSeq_cli.rpkm'
+    benchmark:
+        'benchmark/{experiment}/exp_{num}/{id}/BitSeq_cli/getExpression.json'
+    threads: 4
+    shell:
+        '{UPDATED_PATH} '
+        'estimateExpression'
+        ' {input[0]}'
+        ' -o {params.prefix}'
+        ' --outType RPKM'
+        ' -t {input[1]}'
+        ' --seed {wildcards.num}{wildcards.id}'
+        # '$ $BitSeq/estimateExpression data1-1.prob -o data1-1 --outType RPKM -p parameters1.txt -t ensemblGenes.tr -P 2'
+
+rule BitSeq_de:
+    input:
+        'sims/{experiment}/exp_{num}/{id}/BitSeq_cli.rpkm'
+    output:
+        'results/{experiment}/exp_{num}/BitSeq.rds'
+    benchmark:
+        'benchmark/{experiment}/exp_{num}/BitSeq_de.json'
+    shell:
+        '{UPDATED_PATH} '

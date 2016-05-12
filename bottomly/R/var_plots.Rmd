@@ -1,0 +1,195 @@
+---
+  title: "looking at different variance components"
+  output:
+    html_document:
+      fig_height: 20
+      fig_width: 20
+---
+
+# preliminaries
+
+Load things like the transcript to gene mapping and permutation info.
+
+```{r}
+source('../../geuvadis/R/gene_common.R')
+source('../../geuvadis/R/benchmark_methods.R')
+source('get_metadata.R')
+```
+
+```{r}
+set.seed(42)
+which_permutation <- sample.int(20, 1)
+```
+
+```{r}
+stc <- training_sets[[which_permutation]]
+```
+# transcript level
+
+```{r}
+isoform_file <- '../results/sleuth_isoform.rds'
+
+if (!file.exists(isoform_file)) {
+  soi <- run_sleuth_prep(stc)
+  soi <- sleuth_fit(soi, ~1, 'reduced')
+  soi <- sleuth_lrt(soi, 'reduced', 'full')
+  saveRDS(soi, file = isoform_file)
+} else {
+  soi <- readRDS(isoform_file)
+}
+```
+
+get the relevant results out
+
+```{r}
+sr <- sleuth_results(soi, 'reduced:full', 'lrt')
+```
+
+plot the total raw variance
+
+```{r}
+ggplot(sr, aes(mean_obs, (var_obs) ^ (0.25))) +
+  geom_point(alpha = 0.05) +
+  theme_cowplot(25) +
+  xlab('mean( log( x + 0.5 ) )') +
+  ylab('sqrt( total standard deviation )')
+```
+
+plot the biological variance with shrinkage:
+
+```{r}
+plot_mean_var(soi) +
+  theme_cowplot(25)
+```
+
+plot the technical variability:
+
+```{r}
+ggplot(sr, aes(mean_obs, (tech_var) ^ 0.25)) +
+  geom_point(alpha = 0.05) +
+  theme_cowplot(25) +
+  xlab('mean( log( x + 0.5 ) )') +
+  ylab('sqrt( inferential standard deviation )')
+```
+
+plot the final variability estimates (total)
+
+```{r}
+ggplot(sr, aes(mean_obs, (final_sigma_sq + tech_var) ^ 0.25)) +
+  geom_point(alpha = 0.05) +
+  theme_cowplot(25) +
+  xlab('mean( log( x + 0.5 ) )') +
+  ylab('sqrt( final standard deviation )')
+```
+
+# gene level analysis
+
+```{r}
+gene_file <- '../results/sleuth_gene.rds'
+
+sog <- NULL
+if (!file.exists(gene_file)) {
+  sog <- run_sleuth_prep(stc, gene_mode = 'ens_gene')
+  sog <- sleuth_fit(sog, ~1, 'reduced')
+  sog <- sleuth_lrt(sog, 'reduced', 'full')
+  saveRDS(sog, file = isoform_file)
+} else {
+  sog <- readRDS(gene_file)
+}
+```
+
+get the relevant results out
+
+```{r}
+sr <- sleuth_results(sog, 'reduced:full', 'lrt', show_all = FALSE)
+```
+
+
+some global constants
+
+```{r}
+gene_alpha <- 0.2
+```
+
+plot the total raw variance
+
+```{r}
+ggplot(sr, aes(mean_obs, (var_obs) ^ (0.25))) +
+  geom_point(alpha = gene_alpha) +
+  theme_cowplot(25) +
+  xlab('mean( log( x + 0.5 ) )') +
+  ylab('sqrt( total standard deviation )')
+```
+
+plot the biological variance with shrinkage:
+
+```{r}
+plot_mean_var(sog) +
+  theme_cowplot(25)
+```
+
+plot the technical variability:
+
+```{r}
+ggplot(sr, aes(mean_obs, (tech_var) ^ 0.25)) +
+  geom_point(alpha = gene_alpha) +
+  theme_cowplot(25) +
+  xlab('mean( log( x + 0.5 ) )') +
+  ylab('sqrt( inferential standard deviation )')
+```
+
+plot the final variability estimates (total)
+
+```{r}
+ggplot(sr, aes(mean_obs, (final_sigma_sq + tech_var) ^ 0.25)) +
+  geom_point(alpha = gene_alpha) +
+  theme_cowplot(25) +
+  xlab('mean( log( x + 0.5 ) )') +
+  ylab('sqrt( final standard deviation )')
+```
+
+
+```{r}
+estimate_transformed_variance <- function(mu, effective_length, n, scale_factor) {
+  # compute something proportional to TPM
+  res <- sapply(1:1000, function(i) {
+    y <- rpois(n, mu) / effective_length
+    y <- log(scale_factor * y)
+    y <- y[is.finite(y)]
+    c(mean(y, na.rm = TRUE), var(y, na.rm = TRUE))
+  })
+  t(res)
+}
+
+tmp <- lapply(c(
+  seq(0.5, 5, length.out = 40),
+  seq(5, 500, length.out = 1000),
+  seq(500, 1000000, length.out = 400)),
+  function(mu) {
+    estimate_transformed_variance(mu, 1, 100, 1)
+  })
+
+confidence_bands <- lapply(tmp,
+  function(x) {
+    qs <- quantile(x[, 2], probs = c(0.05, 0.95), na.rm = TRUE)
+    data.frame(mean_obs = mean(x[, 1], na.rm = TRUE),
+      lower = qs[1], upper = qs[2], mean_var = mean(x[, 2], na.rm = TRUE))
+  })
+confidence_bands <- dplyr::bind_rows(confidence_bands)
+confidence_bands <- dplyr::filter(confidence_bands, is.finite(mean_obs))
+```
+
+
+```{r}
+ggplot(sr, aes(mean_obs, tech_var ^ 0.25)) +
+  geom_point(alpha = gene_alpha) +
+  theme_cowplot(25) +
+  xlab('mean( log( x + 0.5 ) )') +
+  ylab('sqrt( inferential standard deviation )') +
+  geom_path(aes(mean_obs, lower ^ 0.25), data = confidence_bands, color = 'red',
+    size = 0.8, alpha = 0.7) +
+  geom_path(aes(mean_obs, upper ^ 0.25), data = confidence_bands, color = 'red',
+    size = 0.8, alpha = 0.7) +
+  geom_path(aes(mean_obs, mean_var ^ 0.25), data = confidence_bands,
+    color = 'dodgerblue', size = 0.8, alpha = 0.7)
+```

@@ -7,7 +7,11 @@ rule all:
         HISAT,
         CUFFLINKS,
         SAMTOOLS,
-        FEATURE_COUNTS
+        FEATURE_COUNTS,
+        SEQTK,
+        BOWTIE,
+
+        BitSeq_parseAlignment
 
 rule get_kallisto:
     output:
@@ -73,6 +77,25 @@ rule get_rsem_simulate:
         ' && '
         ' rm -rf {params.tmp}'
 
+rule get_bowtie:
+    output:
+        BOWTIE
+    params:
+        url = 'https://github.com/BenLangmead/bowtie/archive/v1.1.2.tar.gz',
+        tmp = 'bowtie_temporary'
+    shell:
+        'wget -O {params.tmp}.tar.gz {params.url}'
+        ' && '
+        'tar -xf {params.tmp}.tar.gz'
+        ' && '
+        'cd bowtie-1.1.2'
+        ' && '
+        'make prefix=.. install'
+        ' && '
+        'rm -rf bowtie*'
+
+
+
 rule get_hisat:
     output:
         HISAT
@@ -100,3 +123,40 @@ rule get_feature_counts:
         'cp -rf subread*/bin/* bin'
         ' && '
         'rm -rf subread*'
+
+rule get_seqtk:
+    output:
+        SEQTK
+    params:
+        url = 'https://github.com/lh3/seqtk',
+        tmp = 'seqtk',
+        branch = '4feb6e81444ab6bc44139dd3a125068f81ae4ad8'
+    shell:
+        'git clone {params.url} {params.tmp};'
+        ' git reset --hard {params.branch};'
+        # 'git clone --branch {params.branch} --depth 1 {params.url} {params.tmp};'
+        ' cd {params.tmp};'
+        ' make;'
+        ' cd ..;'
+        # 'find {params.tmp} -maxdepth 1 -perm +o+x -type f -exec cp {{}} bin \;'
+        ' find {params.tmp} -maxdepth 1 -perm /111 -type f -exec cp {{}} bin \;'
+        ' && '
+        ' rm -rf {params.tmp}'
+
+rule get_BitSeq:
+    output:
+        BitSeq_parseAlignment
+    params:
+        url = 'https://github.com/BitSeq/BitSeq.git',
+        tmp = 'BitSeq',
+        branch = '72fe9d9408467ac55fcbc717472e45ec71626b45'
+    shell:
+        'git clone {params.url} {params.tmp};'
+        ' git reset --hard {params.branch};'
+        ' cd {params.tmp};'
+        ' make;'
+        ' cd ..;'
+        # 'find {params.tmp} -maxdepth 1 -perm +o+x -type f -exec cp {{}} bin \;'
+        ' find {params.tmp} -maxdepth 1 -perm /111 -type f -exec cp {{}} bin \;'
+        ' && '
+        ' rm -rf {params.tmp}'

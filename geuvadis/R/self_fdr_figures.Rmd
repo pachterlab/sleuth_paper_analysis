@@ -1,0 +1,117 @@
+---
+  title: "FDR estimation merging Bottomly et. al. and resampling simulation"
+  output:
+    html_document:
+      fig_height: 12
+      fig_width: 10
+---
+
+
+## loading packages
+
+
+```{r}
+source('gene_common.R')
+source('benchmark_methods.R')
+```
+
+```{r}
+library('ggplot2')
+library('mamabear')
+library('dplyr')
+library('cowplot')
+```
+
+```{r}
+sim_name <- 'gfr_10_11_1_43_2'
+
+theme_hp <- function() {
+  theme_cowplot(25) +
+    theme(legend.key.size = unit(2, "lines"), legend.position = 'none')
+}
+```
+
+```{r}
+base_dir <- '../results/final_figures'
+default_extension <- '.pdf'
+```
+
+## isoform level
+
+```{r}
+self_fdr_simulation <- readRDS(paste0('../results/', sim_name,
+  '/self_fdr_isoform.rds'))
+self_fdr_bottomly <- readRDS(file.path('..', '..', 'bottomly', 'results',
+  'self_fdr_isoform.rds'))
+```
+
+```{r}
+self_fdr_simulation <- dplyr::mutate(self_fdr_simulation,
+  method_label = paste0(method, '\nsimulation'),
+  type = 'simulation')
+self_fdr_bottomly <- dplyr::mutate(self_fdr_bottomly,
+  method_label = paste0(method, '\nexperiment'),
+  type = 'experiment')
+self_fdr <- dplyr::bind_rows(self_fdr_bottomly, self_fdr_simulation)
+```
+
+```{r}
+p <- ggplot(self_fdr, aes(method_label, true_fdr, color = method,
+  linetype = type)) +
+  geom_boxplot(width = 0.8) +
+  geom_jitter(width = 0.2) +
+  facet_wrap(~fdr_level_string, ncol = 1) +
+  geom_hline(aes(yintercept = fdr_level), linetype = 2) +
+  coord_cartesian(ylim = c(0, 1.05)) +
+  xlab('method') +
+  ylab('self-referential false discovery rate') +
+  theme_hp() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_color_manual(values = method_colors)
+p
+```
+
+```{r}
+filename <- file.path(base_dir, paste0('isoform_resampling_merged', default_extension))
+save_plot(filename, p, base_aspect_ratio = 0.75, base_height = 20)
+```
+
+## gene level
+
+```{r}
+self_fdr_simulation <- readRDS(paste0('../results/', sim_name,
+  '/self_fdr_gene.rds'))
+self_fdr_bottomly <- readRDS(file.path('..', '..', 'bottomly', 'results',
+  'self_fdr_gene.rds'))
+```
+
+```{r}
+self_fdr_simulation <- dplyr::mutate(self_fdr_simulation,
+  method_label = paste0(method, '\nsimulation'),
+  type = 'simulation')
+self_fdr_bottomly <- dplyr::mutate(self_fdr_bottomly,
+  method_label = paste0(method, '\nexperiment'),
+  type = 'experiment')
+self_fdr <- dplyr::bind_rows(self_fdr_bottomly, self_fdr_simulation)
+```
+
+```{r}
+p <- ggplot(self_fdr, aes(method_label, true_fdr, color = method,
+  linetype = type)) +
+  geom_boxplot(width = 0.8) +
+  geom_jitter(width = 0.2) +
+  facet_wrap(~fdr_level_string, ncol = 1) +
+  geom_hline(aes(yintercept = fdr_level), linetype = 2) +
+  coord_cartesian(ylim = c(0, 1.05)) +
+  xlab('method') +
+  ylab('self-referential false discovery rate') +
+  theme_hp() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_color_manual(values = method_colors)
+p
+```
+
+```{r}
+filename <- file.path(base_dir, paste0('gene_resampling_merged', default_extension))
+save_plot(filename, p, base_aspect_ratio = 0.75, base_height = 20)
+```

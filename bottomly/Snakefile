@@ -2,22 +2,81 @@ include: '../config.py'
 
 from os.path import isfile
 
+###
+# initialization
+###
+
+# rule init:
+#     output:
+#         'metadata/TRAINING.rds',
+#         'metadata/TRAINING_a.txt',
+#         'metadata/TRAINING_b.txt'
+#     shell:
+#         source_r('R', 'generate_resampling.R')
+
 SAMPLES_FILE = 'metadata/accession.txt'
 
 SRA_SINGLE = []
 if isfile(SAMPLES_FILE):
     SRA_SINGLE = get_sample_ids(SAMPLES_FILE)
+else:
+    print('Error: please run the init script first')
+    import sys
+    sys.exit(1)
 
+TRAINING_A = []
+TRAINING_B = []
+TRAINING_FILE_A = 'metadata/training_a.txt'
+TRAINING_FILE_B = 'metadata/training_b.txt'
+if isfile(TRAINING_FILE_A) and isfile(TRAINING_FILE_B):
+    TRAINING_A = get_sample_ids(TRAINING_FILE_A)
+    TRAINING_B = get_sample_ids(TRAINING_FILE_B)
+    # print(TRAINING_A)
+else:
+    # force running the init
+    print('Warning: the init script has not yet been run. Running now.')
+    # rule:
+    #     input: rules.init.output
+
+VALIDATION_FILE_A = 'metadata/validation_a.txt'
+VALIDATION_FILE_B = 'metadata/validation_b.txt'
+if isfile(VALIDATION_FILE_A) and isfile(VALIDATION_FILE_B):
+    VALIDATION_A = get_sample_ids(VALIDATION_FILE_A)
+    VALIDATION_B = get_sample_ids(VALIDATION_FILE_B)
+    # print(VALIDATION_A)
+else:
+    # force running the init
+    print('Warning: the init script has not yet been run. Running now.')
+    # rule:
+    #     input: rules.init.output
+
+###
+# main runs
+###
 
 rule all:
     input:
-        expand('data/single/{id}/{id}.fastq.gz', id = SRA_SINGLE)
+        expand('data/single/{id}/{id}.fastq.gz', id = SRA_SINGLE),
+        expand('data/single/{id}/{id}_trimmed.fastq.gz', id = SRA_SINGLE),
+        expand('results/single/{id}/featureCounts.txt', id = SRA_SINGLE),
+        expand('results/single/{id}/kallisto/abundance.h5', id = SRA_SINGLE),
+        expand('results/single/{id}/cuffquant/abundances.cxb', id = SRA_SINGLE),
+        expand('results/training/{num}/cuffdiff/isoform_exp.diff',
+            num = range(1, 21)),
+        expand('results/validation/{num}/cuffdiff/isoform_exp.diff',
+            num = range(1, 21)),
+
+        'R/fdr.html'
+
+        # 'R/isoform_benchmarks.html',
+        # 'R/auc.html'
+
 
 rule fastq_dump_single:
     input:
         SAMPLES_FILE
     output:
-        'data/single/{id}',
+        'data/single/{id,[A-Z]+[0-9]+}',
         'data/single/{id}/{id}.fastq.gz'
     threads: 1
     shell:
@@ -25,3 +84,231 @@ rule fastq_dump_single:
         ' -O {output[0]}'
         ' --gzip'
         ' {wildcards.id}'
+
+# trim the reads to length of 43 (as specified in the paper)
+rule fastq_trim:
+    input:
+        'data/single/{id,[A-Z]+[0-9]+}',
+        'data/single/{id}/{id}.fastq.gz'
+    output:
+        'data/single/{id}/{id}_trimmed.fastq.gz'
+    threads: 1
+    shell:
+        '{UPDATED_PATH} '
+        'seqtk'
+        ' trimfq'
+        ' -e 33'
+        ' {input[1]}'
+        ' | '
+        'gzip'
+        ' > '
+        '{output}'
+
+rule kallisto:
+    input:
+        'data/single/{id,[A-Z]+[0-9]+}/{id}_trimmed.fastq.gz'
+    output:
+        'results/single/{id}/kallisto',
+        'results/single/{id}/kallisto/abundance.h5'
+    threads: 5
+    shell:
+        '{UPDATED_PATH} '
+        'kallisto'
+        ' quant'
+        ' -b 100'
+        ' -t 5'
+        ' -i {MOUSE_KALLISTO_INDEX}'
+        ' -o {output[0]}'
+        ' --single'
+        ' -l 300'
+        ' -s 20'
+        ' {input}'
+
+rule hisat_alignment:
+    input:
+        'data/single/{id,[A-Z]+[0-9]+}/{id}_trimmed.fastq.gz',
+    output:
+        'results/single/{id}/hisat.bam'
+    threads: 20
+    shell:
+        '{UPDATED_PATH}'
+        ' hisat2'
+        ' -x {MOUSE_HISAT_INDEX}'
+        ' -U {input[0]}'
+        ' --dta-cufflinks'
+        ' -p {threads}'
+        ' | '
+        '{UPDATED_PATH} samtools view -Sb -'
+        ' > '
+        '{output}.unsorted'
+        ' && '
+        '{UPDATED_PATH} samtools sort'
+        ' -o {output}'
+        ' {output}.unsorted'
+        ' && '
+        'rm {output}.unsorted'
+
+rule featureCounts:
+    input:
+        'results/single/{id,[A-Z]+[0-9]+}/hisat.bam'
+    output:
+        'results/single/{id}/featureCounts.txt'
+    threads: 5
+    shell:
+        '{UPDATED_PATH} '
+        'featureCounts '
+        ' -a {MOUSE_TRANSCRIPTOME_GTF}'
+        ' -o {output}'
+        ' -T {threads}'
+        ' -p'
+        ' {input}'
+
+rule cuffquant:
+    input:
+        'results/single/{id,[A-Z]+[0-9]+}/hisat.bam',
+        MOUSE_TRANSCRIPTOME_GTF
+    output:
+        'results/single/{id}/cuffquant/abundances.cxb'
+    threads: 3
+    params:
+        output = 'results/single/{id}/cuffquant'
+    shell:
+        '{UPDATED_PATH}'
+        ' cuffquant'
+        ' -p {threads}'
+        ' -o {params.output}'
+        ' -b {MOUSE_GENOME_FA}'
+        ' -m 300'
+        ' -s 20'
+        ' -u'
+        ' -q'
+        ' {MOUSE_TRANSCRIPTOME_GTF}'
+        ' {input[0]}'
+
+rule run_benchmarks_isoform:
+    input:
+        expand('results/single/{id}/kallisto/abundance.h5', id = SRA_SINGLE),
+        expand('results/validation/{num}/cuffdiff/isoform_exp.diff',
+            num = range(1, 20 + 1))
+    output:
+        'results/isoform_self_benchmark.rds',
+    threads: N_THREADS
+    shell:
+        source_r('R', 'run_benchmarks.R') +
+        ' {threads}'
+rule run_benchmarks_gene:
+    input:
+        expand('results/single/{id}/kallisto/abundance.h5', id = SRA_SINGLE),
+        expand('results/single/{id}/featureCounts.txt', id = SRA_SINGLE),
+        expand('results/validation/{num}/cuffdiff/gene_exp.diff',
+            num = range(1, 20 + 1))
+    output:
+        'results/gene_self_benchmark.rds'
+    threads: N_THREADS
+    shell:
+        source_r('R', 'run_benchmarks_gene.R') +
+        ' {threads}'
+
+rule plots_report:
+    input:
+        'results/all_benchmarks.rds',
+        'results/sensitivity_precision_plots.rds'
+    output:
+        'R/isoform_benchmarks.html'
+    shell:
+        source_rmd('R', 'isoform_benchmarks.Rmd')
+
+rule auc_report:
+    input:
+        'results/all_benchmarks.rds',
+        'results/sensitivity_precision_plots.rds'
+    output:
+        'R/auc.html'
+    shell:
+        source_rmd('R', 'auc.Rmd')
+
+def get_cuffdiff_training(wildcards):
+    num = int(wildcards['num']) - 1
+    a = TRAINING_A[num].split(' ')
+    b = TRAINING_B[num].split(' ')
+    ids = a + b
+    return expand('results/single/{id}/cuffquant/abundances.cxb', id = ids)
+rule cuffdiff_training:
+    input:
+        get_cuffdiff_training
+    output:
+        'results/training/{num}/cuffdiff',
+        'results/training/{num}/cuffdiff/isoform_exp.diff',
+        'results/training/{num}/cuffdiff/gene_exp.diff'
+    threads: 3
+    run:
+        num = int(wildcards['num']) - 1
+        a = TRAINING_A[num].split(' ')
+        b = TRAINING_B[num].split(' ')
+        a = expand('results/single/{id}/cuffquant/abundances.cxb', id = a)
+        b = expand('results/single/{id}/cuffquant/abundances.cxb', id = b)
+
+        cmd = ' '.join([UPDATED_PATH,
+            'cuffdiff',
+            '-p', str(threads),
+            '-o', output[0],
+            '-b', MOUSE_GENOME_FA,
+            '-u',
+            '-q',
+            MOUSE_TRANSCRIPTOME_GTF,
+            ','.join(a),
+            ','.join(b)
+            ])
+        print(cmd)
+        shell(cmd)
+
+def get_cuffdiff_validation(wildcards):
+    num = int(wildcards['num']) - 1
+    a = VALIDATION_A[num].split(' ')
+    b = VALIDATION_B[num].split(' ')
+    ids = a + b
+    return expand('results/single/{id}/cuffquant/abundances.cxb', id = ids)
+rule cuffdiff_validation:
+    input:
+        get_cuffdiff_validation
+    output:
+        'results/validation/{num}/cuffdiff',
+        'results/validation/{num}/cuffdiff/isoform_exp.diff',
+        'results/validation/{num}/cuffdiff/gene_exp.diff'
+    threads: 3
+    run:
+        num = int(wildcards['num']) - 1
+        a = VALIDATION_A[num].split(' ')
+        b = VALIDATION_B[num].split(' ')
+        a = expand('results/single/{id}/cuffquant/abundances.cxb', id = a)
+        b = expand('results/single/{id}/cuffquant/abundances.cxb', id = b)
+
+        cmd = ' '.join([UPDATED_PATH,
+            'cuffdiff',
+            '-p', str(threads),
+            '-o', output[0],
+            '-b', MOUSE_GENOME_FA,
+            '-u',
+            '-q',
+            MOUSE_TRANSCRIPTOME_GTF,
+            ','.join(a),
+            ','.join(b)
+            ])
+        print(cmd)
+        shell(cmd)
+
+rule fdr_plots:
+    input:
+        'results/isoform_self_benchmark.rds',
+        'results/gene_self_benchmark.rds'
+    output:
+        'R/fdr.html'
+    shell:
+        source_rmd('R', 'fdr.Rmd')
+
+rule clean:
+    shell:
+        'rm'
+        ' results/all_benchmarks.rds'
+        ' results/sensitivity_precision_plots.rds'
+        ' R/isoform_benchmarks.html'

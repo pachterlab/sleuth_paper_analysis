@@ -1,0 +1,360 @@
+---
+  title: "FDR estimation (resampling simulation et. al.)"
+  output:
+    html_document:
+      fig_height: 12
+      fig_width: 10
+---
+
+# preliminaries
+
+```{r}
+source('gene_common.R')
+source('benchmark_methods.R')
+```
+
+## loading packages
+
+```{r}
+library('ggplot2')
+library('mamabear')
+library('dplyr')
+library('cowplot')
+```
+
+```{r}
+sim_name <- 'gfr_10_11_1_43_2'
+
+theme_hp <- function() {
+  theme_cowplot(25) +
+    theme(legend.key.size = unit(2, "lines"), legend.position = 'none')
+}
+```
+
+```{r}
+base_dir <- '../results/final_figures'
+default_extension <- '.pdf'
+```
+
+# getting the truth
+
+Since this is a simulation, we can actually get the truth.
+
+```{r}
+transcript_gene_mapping <- get_human_gene_names()
+sim_info <- get_de_info(sim_name, 1, transcript_gene_mapping)
+```
+
+
+# transcript level
+
+## loading data
+
+Take a look at `run_benchmarks.R` to see how this data is generated.
+
+```{r}
+self_benchmark <- readRDS(file.path('..', 'results', sim_name,
+  'isoform_self_benchmark.rds'))
+```
+
+```{r}
+self_benchmark_truth <- lapply(self_benchmark,
+  function(method_list) {
+    lapply(method_list, function (bench) {
+      new_de_benchmark(bench$original_data, bench$labels, sim_info$de_info)
+    })
+  })
+```
+
+```{r}
+tmp <- lapply(self_benchmark_truth,
+  average_sensitivity_specificity, use_oracle = TRUE)
+self_fdr_truth_df <- lapply(tmp,
+  function(x) {
+    x %>%
+      dplyr::group_by(method, fdr_level) %>%
+      dplyr::summarize(
+        mean_fdr = mean(true_fdr, na.rm = TRUE),
+        sd_fdr = sd(true_fdr, na.rm = TRUE))
+  })
+self_fdr_truth_df <- dplyr::bind_rows(self_fdr_truth_df)
+```
+
+# creating the plots
+
+
+```{r}
+self_fdr <- lapply(self_benchmark, average_sensitivity_specificity)
+self_fdr <- dplyr::bind_rows(self_fdr)
+self_fdr <- dplyr::mutate(self_fdr, method = sub('qval_', '', method))
+```
+
+Let's rename things to be a bit more consistent with the main figures:
+
+```{r}
+mapping <- c('sleuth.lrt' = 'sleuth', 'limmaVoom' = 'voom',
+  'DESeq2' = 'DESeq2', 'DESeq' = 'DESeq', 'Cuffdiff2' = 'Cuffdiff 2',
+  'EBSeq' = 'EBSeq', 'edgeR' = 'edgeR')
+self_fdr <- dplyr::filter(self_fdr, method != 'sleuth.wt')
+self_fdr <- dplyr::mutate(self_fdr, method = mapping[method])
+self_fdr_truth_df <- dplyr::filter(self_fdr_truth_df, method != 'sleuth.wt')
+self_fdr_truth_df <- dplyr::mutate(self_fdr_truth_df, method = mapping[method])
+```
+
+Now let's make some pretty labels:
+
+```{r}
+self_fdr <- dplyr::mutate(self_fdr,
+  fdr_level_string = paste0('eFDR = ', sprintf('%.2f', fdr_level)))
+self_fdr_truth_df <- dplyr::mutate(self_fdr_truth_df,
+  fdr_level_string = paste0('eFDR = ', sprintf('%.2f', fdr_level)))
+```
+
+Let's put a position on top of each box plot:
+
+```{r}
+max_fdr_df <- dplyr::summarize(dplyr::group_by(self_fdr, method, fdr_level),
+  max_fdr = max(true_fdr, na.rm = TRUE) + 0.04)
+self_fdr_truth_df <- dplyr::inner_join(self_fdr_truth_df, max_fdr_df,
+  by = c('fdr_level', 'method'))
+self_fdr_truth_df <- dplyr::mutate(self_fdr_truth_df,
+  label = sprintf('%.3f%s', mean_fdr,
+    ifelse(!is.na(sd_fdr), sprintf(' \u00b1 %.3f', 2 * sd_fdr), '')))
+```
+
+Although, turns out were not going to do that anymore.
+Here is the figure:
+
+```{r}
+
+p <- ggplot(self_fdr, aes(method, true_fdr, color = method)) +
+  geom_boxplot() +
+  # geom_text(aes(method, max_fdr + 0.02,
+  #   label = label),
+  #   data = self_fdr_truth_df, size = 6) +
+  facet_wrap(~fdr_level_string, ncol = 1) +
+  geom_hline(aes(yintercept = fdr_level), linetype = 2) +
+  # ylim(0, 1) +
+  coord_cartesian(ylim = c(0, 1.05)) +
+  ylab('false discovery rate') +
+  theme_hp() +
+  geom_jitter() +
+  scale_color_manual(values = method_colors)
+p
+
+filename <- file.path(base_dir, paste0('isoform_resampling', default_extension))
+save_plot(filename, p, base_aspect_ratio = 0.75, base_height = 15)
+```
+
+save the transcript level stuff for a figure later:
+
+```{r}
+saveRDS(self_fdr, file = paste0('../results/', sim_name, '/self_fdr_isoform.rds'))
+```
+
+Note that voom behaves oddly at fdr = 0.01. This can be verified by looking at how many things it actually calls:
+
+```{r}
+lapply(seq_along(self_benchmark$limmaVoom),
+  function(i) {
+    x <- self_benchmark$limmaVoom[[i]]
+    dplyr::filter(x$m_qval, estimate <= 0.01) %>%
+      dplyr::mutate(sample = i)
+  }) %>%
+  dplyr::bind_rows()
+```
+
+### comparing self consistency and the true fdr
+
+Since we have the actual fdr, let's compare the self consistency results with that.
+
+```{r}
+self_fdr_summary <- dplyr::group_by(self_fdr, method, fdr_level)
+self_fdr_summary <- dplyr::summarize(self_fdr_summary,
+  mean_fdr = mean(true_fdr, na.rm = TRUE),
+  sd_fdr = sd(true_fdr, na.rm = TRUE))
+self_fdr_summary <- dplyr::select(self_fdr_summary,
+  method, fdr_level, self_mean_fdr = mean_fdr, self_sd_fdr = sd_fdr)
+```
+
+```{r}
+fdr_summary <- dplyr::inner_join(self_fdr_truth_df, self_fdr_summary,
+  by = c('method', 'fdr_level'))
+fdr_summary <- dplyr::mutate(fdr_summary,
+  fdr_low = mean_fdr - 2 * sd_fdr,
+  fdr_high = mean_fdr + 2 * sd_fdr,
+  self_fdr_low = self_mean_fdr - 2 * self_sd_fdr,
+  self_fdr_high = self_mean_fdr + 2 * self_sd_fdr)
+fdr_summary <- dplyr::mutate(fdr_summary,
+  FDR = factor(sprintf('%.2f', fdr_level)))
+```
+
+```{r}
+ggplot(fdr_summary, aes(self_mean_fdr, mean_fdr)) +
+  geom_abline(intercept = 0, slope = 1, linetype = 3) +
+  geom_point(aes(color = method, shape = FDR),
+    size = 9, alpha = 0.8) +
+  coord_cartesian(xlim = c(-0.05, 1), ylim = c(-0.05, 1), expand = FALSE) +
+  scale_color_manual(values = method_colors) +
+  geom_point(aes(x, y, shape = FDR), size = 5, color = 'black',
+    data = data.frame(x = c(0.01, 0.05, 0.10), y = c(0.01, 0.05, 0.10),
+      FDR = factor(c('0.01', '0.05', '0.10'))), show.legend = FALSE) +
+  geom_errorbar(aes(ymax = fdr_high, ymin = fdr_low, color = method),
+    width = 0.01) +
+  # geom_errorbar(aes(xmax = self_fdr_high, xmin = self_fdr_low, color = method),
+  #   width = 0.01) +
+  # theme_hp() +
+  theme_cowplot(25) +
+  ylab('false discovery rate') +
+  xlab('self-referential false discovery rate')
+  # geom_vline()
+```
+
+# gene level
+
+## loading data
+
+Take a look at `run_benchmarks_gene.R` to see how this data is generated.
+
+```{r}
+self_benchmark <- readRDS(file.path('..', 'results', sim_name,
+  'gene_self_benchmark.rds'))
+```
+
+Since this is a simulation, we know the truth.
+Let's calculate true fdr:
+
+```{r}
+self_benchmark_truth <- lapply(self_benchmark,
+  function(method_list) {
+    lapply(method_list, function (bench) {
+      new_de_benchmark(bench$original_data, bench$labels, sim_info$de_genes)
+    })
+  })
+```
+
+```{r}
+tmp <- lapply(self_benchmark_truth,
+  average_sensitivity_specificity, use_oracle = TRUE)
+self_fdr_truth_df <- lapply(tmp,
+  function(x) {
+    x %>%
+      dplyr::group_by(method, fdr_level) %>%
+      dplyr::summarize(
+        mean_fdr = mean(true_fdr, na.rm = TRUE),
+        sd_fdr = sd(true_fdr, na.rm = TRUE))
+  })
+self_fdr_truth_df <- dplyr::bind_rows(self_fdr_truth_df)
+```
+
+
+# creating the plots
+
+```{r}
+self_fdr <- lapply(self_benchmark, average_sensitivity_specificity)
+self_fdr <- dplyr::bind_rows(self_fdr)
+self_fdr <- dplyr::mutate(self_fdr, method = sub('qval_', '', method))
+```
+
+Let's rename things to be a bit more consistent with the main figures:
+
+```{r}
+mapping <- c('sleuth.lrt' = 'sleuth', 'limmaVoom' = 'voom',
+  'DESeq2' = 'DESeq2', 'DESeq' = 'DESeq', 'Cuffdiff2' = 'Cuffdiff 2',
+  'EBSeq' = 'EBSeq', 'edgeR' = 'edgeR')
+self_fdr <- dplyr::filter(self_fdr, method != 'sleuth.wt')
+self_fdr <- dplyr::mutate(self_fdr, method = mapping[method])
+self_fdr_truth_df <- dplyr::filter(self_fdr_truth_df, method != 'sleuth.wt')
+self_fdr_truth_df <- dplyr::mutate(self_fdr_truth_df, method = mapping[method])
+```
+
+Now let's make some pretty labels:
+
+```{r}
+self_fdr <- dplyr::mutate(self_fdr,
+  fdr_level_string = paste0('eFDR = ', sprintf('%.2f', fdr_level)))
+self_fdr_truth_df <- dplyr::mutate(self_fdr_truth_df,
+  fdr_level_string = paste0('eFDR = ', sprintf('%.2f', fdr_level)))
+```
+
+```{r}
+max_fdr_df <- dplyr::summarize(dplyr::group_by(self_fdr, method, fdr_level),
+  max_fdr = max(true_fdr, na.rm = TRUE) + 0.04)
+self_fdr_truth_df <- dplyr::inner_join(self_fdr_truth_df, max_fdr_df,
+  by = c('fdr_level', 'method'))
+self_fdr_truth_df <- dplyr::mutate(self_fdr_truth_df,
+  label = sprintf('%.3f%s', mean_fdr,
+    ifelse(!is.na(sd_fdr), sprintf(' \u00b1 %.3f', 2 * sd_fdr), '')))
+```
+
+```{r}
+p <- ggplot(self_fdr, aes(method, true_fdr, color = method)) +
+  geom_boxplot() +
+  # geom_text(aes(method, max_fdr + 0.02,
+  #   label = label),
+  #   data = self_fdr_truth_df, size = 6) +
+  facet_wrap(~fdr_level_string, ncol = 1) +
+  geom_hline(aes(yintercept = fdr_level), linetype = 2) +
+  # ylim(0, 1) +
+  coord_cartesian(ylim = c(0, 1.05)) +
+  ylab('false discovery rate') +
+  theme_hp() +
+  geom_jitter() +
+  scale_color_manual(values = method_colors)
+p
+
+filename <- file.path(base_dir, paste0('gene_resampling', default_extension))
+save_plot(filename, p, base_aspect_ratio = 0.75, base_height = 15)
+```
+
+now let's save everything:
+
+```{r}
+saveRDS(self_fdr, file = paste0('../results/', sim_name, '/self_fdr_gene.rds'))
+```
+
+### comparing self consistency and the true fdr
+
+Since we have the actual fdr, let's compare the self consistency results with that.
+
+```{r}
+self_fdr_summary <- dplyr::group_by(self_fdr, method, fdr_level)
+self_fdr_summary <- dplyr::summarize(self_fdr_summary,
+  mean_fdr = mean(true_fdr, na.rm = TRUE),
+  sd_fdr = sd(true_fdr, na.rm = TRUE))
+self_fdr_summary <- dplyr::select(self_fdr_summary,
+  method, fdr_level, self_mean_fdr = mean_fdr, self_sd_fdr = sd_fdr)
+```
+
+```{r}
+fdr_summary <- dplyr::inner_join(self_fdr_truth_df, self_fdr_summary,
+  by = c('method', 'fdr_level'))
+fdr_summary <- dplyr::mutate(fdr_summary,
+  fdr_low = mean_fdr - 2 * sd_fdr,
+  fdr_high = mean_fdr + 2 * sd_fdr,
+  self_fdr_low = self_mean_fdr - 2 * self_sd_fdr,
+  self_fdr_high = self_mean_fdr + 2 * self_sd_fdr)
+fdr_summary <- dplyr::mutate(fdr_summary,
+  FDR = factor(sprintf('%.2f', fdr_level)))
+```
+
+```{r}
+ggplot(fdr_summary, aes(self_mean_fdr, mean_fdr)) +
+  geom_abline(intercept = 0, slope = 1, linetype = 3) +
+  geom_point(aes(color = method, shape = FDR),
+    size = 9, alpha = 0.8) +
+  coord_cartesian(xlim = c(-0.05, 1), ylim = c(-0.05, 1), expand = FALSE) +
+  scale_color_manual(values = method_colors) +
+  geom_point(aes(x, y, shape = FDR), size = 5, color = 'black',
+    data = data.frame(x = c(0.01, 0.05, 0.10), y = c(0.01, 0.05, 0.10),
+      FDR = factor(c('0.01', '0.05', '0.10'))), show.legend = FALSE) +
+  geom_errorbar(aes(ymax = fdr_high, ymin = fdr_low, color = method),
+    width = 0.01) +
+  # geom_errorbar(aes(xmax = self_fdr_high, xmin = self_fdr_low, color = method),
+  #   width = 0.01) +
+  # theme_hp() +
+  theme_cowplot(25) +
+  ylab('false discovery rate') +
+  xlab('self-referential false discovery rate')
+  # geom_vline()
+```

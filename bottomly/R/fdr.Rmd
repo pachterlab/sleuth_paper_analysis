@@ -1,0 +1,144 @@
+---
+  title: FDR estimation (Bottomly et. al.)
+  output:
+    html_document:
+      fig_height: 15
+      fig_width: 10
+---
+
+# transcript level
+## loading data
+
+Take a look at `run_benchmarks.R` to see how this data is generated.
+
+```{r}
+suppressMessages({
+library('ggplot2')
+library('mamabear')
+library('dplyr')
+library('cowplot')
+})
+```
+
+```{r}
+theme_hp <- function() {
+  theme_cowplot(25) +
+    theme(legend.key.size = unit(2, "lines"), legend.position = 'none')
+}
+
+base_dir <- '../results/final_figures'
+default_extension <- '.pdf'
+source('../../geuvadis/R/gene_common.R')
+```
+
+
+```{r}
+self_benchmark <- readRDS('../results/isoform_self_benchmark.rds')
+```
+
+## creating the plots
+
+```{r}
+self_fdr <- lapply(self_benchmark, average_sensitivity_specificity)
+self_fdr <- dplyr::bind_rows(self_fdr)
+self_fdr <- dplyr::mutate(self_fdr, method = sub('qval_', '', method))
+```
+
+Let’s rename things to be a bit more consistent with the main figures:
+
+```{r}
+mapping <- c('sleuth.lrt' = 'sleuth', 'limmaVoom' = 'voom',
+  'DESeq2' = 'DESeq2', 'DESeq' = 'DESeq', 'Cuffdiff2' = 'Cuffdiff 2',
+  'EBSeq' = 'EBSeq', 'edgeR' = 'edgeR')
+self_fdr <- dplyr::filter(self_fdr, method != 'sleuth.wt')
+self_fdr <- dplyr::mutate(self_fdr, method = mapping[method])
+```
+
+Now let’s make some pretty labels:
+
+```{r}
+self_fdr <- dplyr::mutate(self_fdr,
+  fdr_level_string = paste0('eFDR = ', sprintf('%.2f', fdr_level)))
+```
+
+```{r}
+p <- ggplot(self_fdr, aes(method, true_fdr, color = method)) +
+  geom_boxplot() +
+  facet_wrap(~fdr_level_string, ncol = 1) +
+  geom_hline(aes(yintercept = fdr_level), linetype = 2) +
+  ylim(0, 1) +
+  ylab('false discovery rate') +
+  theme_hp() +
+  geom_jitter() +
+  scale_color_manual(values = method_colors)
+p
+```
+
+```{r}
+filename <- file.path(base_dir, paste0('isoform_resampling', default_extension))
+save_plot(filename, p, base_aspect_ratio = 0.75, base_height = 15)
+```
+
+Save the results for later:
+
+```{r}
+saveRDS(self_fdr, file.path('..', 'results', 'self_fdr_isoform.rds'))
+```
+
+# gene level
+
+## loading data
+Take a look at run_benchmarks_gene.R to see how this data is generated.
+
+```{r}
+self_benchmark <- readRDS('../results/gene_self_benchmark.rds')
+```
+
+## creating the plots
+
+```{r}
+self_fdr <- lapply(self_benchmark, average_sensitivity_specificity)
+self_fdr <- dplyr::bind_rows(self_fdr)
+self_fdr <- dplyr::mutate(self_fdr, method = sub('qval_', '', method))
+```
+
+Let’s rename things to be a bit more consistent with the main figures:
+
+```{r}
+mapping <- c('sleuth.lrt' = 'sleuth', 'limmaVoom' = 'voom',
+  'DESeq2' = 'DESeq2', 'DESeq' = 'DESeq', 'Cuffdiff2' = 'Cuffdiff 2',
+  'EBSeq' = 'EBSeq', 'edgeR' = 'edgeR')
+self_fdr <- dplyr::filter(self_fdr, method != 'sleuth.wt')
+self_fdr <- dplyr::mutate(self_fdr, method = mapping[method])
+```
+
+Now let’s make some pretty labels:
+
+```{r}
+self_fdr <- dplyr::mutate(self_fdr,
+  fdr_level_string = paste0('eFDR = ', sprintf('%.2f', fdr_level)))
+```
+
+```{r}
+p <- ggplot(self_fdr, aes(method, true_fdr, color = method)) +
+  geom_boxplot() +
+  facet_wrap(~fdr_level_string, ncol = 1) +
+  geom_hline(aes(yintercept = fdr_level), linetype = 2) +
+  ylim(0, 1) +
+  ylab('false discovery rate') +
+  theme_hp() +
+  geom_jitter() +
+  scale_color_manual(values = method_colors)
+p
+```
+
+```{r}
+filename <- file.path(base_dir, paste0('gene_resampling', default_extension))
+save_plot(filename, p, base_aspect_ratio = 0.75, base_height = 15)
+```
+
+let's save everything:
+
+```{r}
+saveRDS(self_fdr, file.path('..', 'results', 'self_fdr_gene.rds'))
+```

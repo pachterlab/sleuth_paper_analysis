@@ -2,14 +2,26 @@ include: '../config.py'
 
 rule all:
     input:
+        ###
+        # human
+        ###
         TRANSCRIPTOME_FA,
         RSEM_ANNOTATION + '.grp',
         TRANSCRIPTOME_GTF,
         KALLISTO_INDEX,
-
-        # genome stuff
         GENOME_FA,
-        expand('{base}.{idx}.ht2', base = HISAT_INDEX, idx = (1, 6))
+        expand('{base}.{idx}.ht2', base = HISAT_INDEX, idx = (1, 6)),
+        expand('{base}.{idx}.ebwt', base = BOWTIE_INDEX, idx = (1, 4)),
+
+
+        ###
+        # mouse
+        ###
+        MOUSE_TRANSCRIPTOME_FA,
+        MOUSE_TRANSCRIPTOME_GTF,
+        MOUSE_KALLISTO_INDEX,
+        MOUSE_GENOME_FA,
+        expand('{base}.{idx}.ht2', base = MOUSE_HISAT_INDEX, idx = (1, 6))
 
 rule get_transcriptome:
     output:
@@ -72,21 +84,73 @@ rule kallisto_index:
         'kallisto index'
         ' -i {output}'
         ' {input}'
-# rule prep_star:
-#     output:
-#         'index/star'
-#     shell: 'mkdir {output}'
-#
-# rule star_index:
-#     output:
-#         STAR_DIRECTORY + '/Genome'
-#     shell:
-#         'mkdir -p {STAR_DIRECTORY} && '
-#         'STAR '
-#         ' --runThreadN 20'
-#         ' --runMode genomeGenerate'
-#         ' --outSAMstrandField intronMotif'
-#         ' --genomeDir {STAR_DIRECTORY}'
-#         ' --genomeFastaFiles {GENOME_FA}'
-#         ' --sjdbGTFfile {TRANSCRIPTOME_GTF}'
-#         ' --sjdbOverhang 75' # read length-1
+
+rule bowtie_index:
+    input:
+        TRANSCRIPTOME_FA
+    output:
+        expand('{base}.{idx}.ebwt', base = BOWTIE_INDEX, idx = (1, 4)),
+        expand('{base}.rev.{idx}.ebwt', base = BOWTIE_INDEX, idx = (1, 2))
+    shell:
+        '{UPDATED_PATH} '
+        'bowtie-build'
+        ' -f --ntoa' # arguments recommended in BitSeq vignette
+        ' {input}'
+        ' {BOWTIE_INDEX}'
+
+###
+# mouse stuff
+###
+rule get_mouse_transcriptome:
+    output:
+        MOUSE_TRANSCRIPTOME_FA
+    shell:
+        'curl -o {output}.gz'
+        ' --silent'
+        ' ftp://ftp.ensembl.org/pub/release-84/fasta/mus_musculus/cdna/Mus_musculus.GRCm38.cdna.all.fa.gz && '
+        ' gunzip {output}.gz'
+
+rule get_mouse_gtf:
+    output:
+        MOUSE_TRANSCRIPTOME_GTF
+    shell:
+        'curl -o {output}.gz'
+        ' --silent'
+        ' ftp://ftp.ensembl.org/pub/release-84/gtf/mus_musculus/Mus_musculus.GRCm38.84.gtf.gz && '
+        ' gunzip {output}.gz'
+
+rule kallisto_mouse_index:
+    input:
+        MOUSE_TRANSCRIPTOME_FA
+    output:
+        MOUSE_KALLISTO_INDEX
+    shell:
+        '{UPDATED_PATH} '
+        'kallisto index'
+        ' -i {output}'
+        ' -k 21'
+        ' {input}'
+
+rule get_mouse_genome:
+    output:
+        MOUSE_GENOME_FA
+    shell:
+        'curl -o {output}.gz'
+        ' --silent'
+        ' ftp://ftp.ensembl.org/pub/release-84/fasta/mus_musculus/dna/Mus_musculus.GRCm38.dna.primary_assembly.fa.gz'
+        ' && '
+        'gunzip {output}.gz'
+
+rule make_mouse_hisat_index:
+    input:
+        MOUSE_GENOME_FA
+    threads:
+        N_THREADS
+    output:
+        expand('{base}.{idx}.ht2', base = MOUSE_HISAT_INDEX, idx = (1, 6))
+    shell:
+        '{UPDATED_PATH} '
+        'hisat2-build'
+        ' -p {threads}'
+        ' {input}'
+        ' {MOUSE_HISAT_INDEX}'

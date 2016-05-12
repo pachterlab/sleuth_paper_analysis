@@ -6,7 +6,6 @@ if (length(args) != 2) {
 
 # temporary for debugging
 n_cpu <- 20
-sim_name <- 'isoform_3_3_20_1_1'
 sim_name <- 'gfr_3_3_20_42_2'
 
 n_cpu <- args[1]
@@ -17,8 +16,8 @@ source("benchmark_methods.R")
 source("gene_common.R")
 
 library("parallel")
-library("cowplot")
 library("mamabear")
+options(mc.cores = n_cpu)
 
 transcript_gene_mapping <- get_human_gene_names()
 
@@ -53,7 +52,7 @@ all_results$Cuffdiff2 <- mclapply(1:20,
   function(i) {
     cat('Sample: ', i, '\n')
     load_gene_results_intersect(sim_name, i, 'Cuffdiff2',
-      cuffdiff_filter_and_run)
+      cuffdiff_filter_and_run_gene)
   }, mc.cores = n_cpu)
 
 all_results$edgeR <- mclapply(1:20,
@@ -80,26 +79,10 @@ all_benchmarks <- lapply(all_results,
       }, mc.cores = n_cpu)
   })
 
-all_nde_plot <- mclapply(all_benchmarks,
-  function(bench) {
-    fdr_nde_plot(bench) +
-      xlim(0, 1000) +
-      ylim(0, 0.10) +
-      theme_cowplot(25) +
-      theme(legend.position = c(0.15, 0.80))
-  })
-
 saveRDS(all_benchmarks, file = paste0('../results/', sim_name,
-  '.gene_benchmarks.rds'))
+  '/gene_benchmarks.rds'))
 
 
-all_benchmarks <- readRDS(paste0('../results/', sim_name, '.gene_benchmarks.rds'))
-
-saveRDS(all_nde_plot, file = '../results/tmp.rds')
-
-all_nde_plot <- readRDS('../results/tmp.rds')
-
-plot_grid(plotlist = all_nde_plot)
 
 
 ###

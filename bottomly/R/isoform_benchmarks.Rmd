@@ -1,0 +1,184 @@
+---
+  title: "transcript level benchmarks (Bottomly et. al.)"
+  output:
+    html_document:
+      fig_height: 14
+---
+
+# preliminaries
+
+We must first load the data.
+To see how the comparisons were generated, look at `run_benchmarks.R`.
+
+```{r}
+# all_benchmarks <- readRDS('../results/all_benchmarks.rds')
+sensitivity_precision_plots <- readRDS('../results/sensitivity_precision_plots.rds')
+```
+
+## organization
+
+`all_benchmarks` and `sensitivity_precision_plots` are organized in the following manner:
+
+- first level: the "truth"
+- second level: the method being compared
+- third level: the replications of the second level
+
+## loading some packages
+
+```{r}
+library('ggplot2')
+library('mamabear')
+library('cowplot')
+```
+
+# sensitivity and precision plots while rotating different methods
+
+## sleuth likelihood ratio test as the validation set
+
+```{r}
+current_validation <- sensitivity_precision_plots$sleuth.lrt
+```
+
+### limmaVoom
+
+```{r}
+current_validation$
+  limmaVoom$
+  together
+```
+
+### DESeq2
+
+```{r}
+current_validation$
+  DESeq2$
+  together
+```
+
+### EBSeq
+
+```{r}
+current_validation$
+  EBSeq$
+  together
+```
+
+## sleuth wald test as the validation set
+
+```{r}
+current_validation <- sensitivity_precision_plots$sleuth.wt
+```
+
+### limmaVoom
+
+```{r}
+current_validation$
+  limmaVoom$
+  together
+```
+
+### DESeq2
+
+```{r}
+current_validation$
+  DESeq2$
+  together
+```
+
+### EBSeq
+
+```{r}
+current_validation$
+  EBSeq$
+  together
+```
+
+## limmaVoom as the validation set
+
+```{r}
+current_validation <- sensitivity_precision_plots$limmaVoom
+```
+
+### limmaVoom
+
+```{r}
+current_validation$
+  limmaVoom$
+  together
+```
+
+### DESeq2
+
+```{r}
+current_validation$
+  DESeq2$
+  together
+```
+
+### EBSeq
+
+```{r}
+current_validation$
+  EBSeq$
+  together
+```
+
+## DESeq2 as the validation set
+
+```{r}
+current_validation <- sensitivity_precision_plots$DESeq2
+```
+
+### limmaVoom
+
+```{r}
+current_validation$
+  limmaVoom$
+  together
+```
+
+### DESeq2
+
+```{r}
+current_validation$
+  DESeq2$
+  together
+```
+
+### EBSeq
+
+```{r}
+current_validation$
+  EBSeq$
+  together
+```
+
+## EBSeq as the validation set
+
+```{r}
+current_validation <- sensitivity_precision_plots$EBSeq
+```
+
+### limmaVoom
+
+```{r}
+current_validation$
+  limmaVoom$
+  together
+```
+
+### DESeq2
+
+```{r}
+current_validation$
+  DESeq2$
+  together
+```
+
+### EBSeq
+
+```{r}
+current_validation$
+  EBSeq$
+  together
+```
