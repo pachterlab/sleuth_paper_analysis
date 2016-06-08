@@ -50,12 +50,19 @@ each_filter <- list()
 
 
 each_filter$sleuth <- mclapply(1:sim$n,
+# each_filter$sleuth <- lapply(1:sim$n,
   function(i) {
     si <- sample_info[[i]]
+    # debugonce(sleuth_prep)
     res <- run_sleuth(si, gene_mode = 'aggregate', gene_column = 'ens_gene')
     res$so <- NULL
     res
   })
+#
+# i <- 1
+# si <- sample_info[[i]]
+# debugonce(sleuth_prep)
+# res <- run_sleuth(si, gene_mode = 'aggregate', gene_column = 'ens_gene')
 
 each_filter$DESeq <- mclapply(1:sim$n,
   function(i) {
@@ -70,32 +77,6 @@ each_filter$DESeq2 <- mclapply(1:sim$n,
     counts <- all_counts[[i]]
     DESeq2_filter_and_run_intersect(counts, si, dummy_count_filter)$result
   })
-
-###
-# temporary log fold change
-###
-
-# lfc_filter <- list()
-#
-# set.seed(101)
-# lfc_filter$lfc <- lapply(1:sim$n,
-#   function(i) {
-#     si <- sample_info[[i]]
-#     counts <- all_counts[[i]]
-#     res <- lfc_filter_and_run (counts, si, dummy_count_filter)$result
-#   })
-#
-# set.seed(101)
-# lfc_filter$geometric_lfc <- lapply(1:sim$n,
-#   function(i) {
-#     si <- sample_info[[i]]
-#     counts <- all_counts[[i]]
-#     res <- geometric_lfc_filter_and_run (counts, si, dummy_count_filter)$result
-#   })
-
-###
-# end temporary log fold change
-###
 
 each_filter$edgeR <- mclapply(1:sim$n,
   function(i) {
@@ -140,30 +121,3 @@ each_filter_benchmark <- mclapply(1:sim$n,
 
 saveRDS(each_filter_benchmark, file = paste0('../results/', sim_name,
   '/gene_benchmarks_filter.rds'))
-
-###
-# another temporary block
-###
-# each_filter_benchmark <- readRDS(paste0('../results/', sim_name,
-#   '/gene_benchmarks_filter.rds'))
-#
-# each_filter <- lapply(each_filter_benchmark[[1]]$labels,
-#   function(label) {
-#     lapply(each_filter_benchmark, function(bench) {
-#       bench$original_data[[label]]
-#     })
-#   })
-# names(each_filter) <- each_filter_benchmark[[1]]$labels
-#
-# each_filter_lfc <- c(each_filter, lfc_filter)
-# each_filter_benchmark_lfc <- lapply(1:sim$n,
-#   function(i) {
-#     current <- lapply(each_filter_lfc, '[[', i)
-#     current_names <- names(each_filter_lfc)
-#     sim_info <- get_de_info(sim_name, i, transcript_gene_mapping)
-#     new_de_benchmark(current, current_names, sim_info$de_genes,
-#       join_mode = 'union')
-#   })
-#
-# saveRDS(each_filter_benchmark_lfc, file = paste0('../results/', sim_name,
-#   '/gene_benchmarks_filter_lfc.rds'))

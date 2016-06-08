@@ -450,6 +450,16 @@ rule benchmark_gene_filter:
     shell:
         source_r('R', 'best_filter_gene.R') + ' {threads} {wildcards.experiment}'
 
+rule benchmark_gene_filter_lfc:
+    input:
+        'results/{experiment}/gene_benchmarks_filter.rds'
+    output:
+        'results/{experiment}/gene_benchmarks_filter_lfc.rds'
+    threads:
+        N_SIM
+    shell:
+        source_r('R', 'best_filter_gene_lfc.R') + ' {threads} {wildcards.experiment}'
+
 N_SIM = 20
 def get_isoform_dependencies(wildcards):
     exp = wildcards['experiment']
@@ -479,12 +489,23 @@ rule benchmark_isoform_filter:
     shell:
         source_r('R', 'best_filter_isoform.R') + ' {threads} {wildcards.experiment}'
 
+rule benchmark_isoform_filter_lfc:
+    input:
+        'results/{experiment}/isoform_benchmarks_filter.rds'
+    output:
+        'results/{experiment}/isoform_benchmarks_filter_lfc.rds'
+    threads: 1
+    shell:
+        source_r('R', 'best_filter_isoform_lfc.R') + ' {threads} {wildcards.experiment}'
+
 rule benchmark_report:
     input:
         'results/{experiment}/isoform_benchmarks.rds',
         'results/{experiment}/isoform_benchmarks_filter.rds',
+        'results/{experiment}/isoform_benchmarks_filter_lfc.rds',
         'results/{experiment}/gene_benchmarks.rds',
-        'results/{experiment}/gene_benchmarks_filter.rds'
+        'results/{experiment}/gene_benchmarks_filter.rds',
+        'results/{experiment}/gene_benchmarks_filter_lfc.rds'
     output:
         'results/{experiment}/benchmark_report.html'
     threads:

@@ -122,8 +122,8 @@ cv_sleuth <- sleuth_results$final_sigma_sq/sr$mean_obs^2
 
 # sigma2 <- mu + mu^2 * phi
 #
-# log_mu <- function(mu,sigma2) {log(mu) - sigma2/(2 * mu^2)}
-# log_sigma2 <- function(mu,sigma2) {sigma2/(mu^2) - 0.25 * sigma2^2/(mu^4)}
+log_mu <- function(mu,sigma2) {log(mu) - sigma2/(2 * mu^2)}
+log_sigma2 <- function(mu,sigma2) {sigma2/(mu^2) - 0.25 * sigma2^2/(mu^4)}
 #
 # lmu <- log_mu(mu,sigma2)
 # ls2 <- log_sigma2(mu,sigma2)

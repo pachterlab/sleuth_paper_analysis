@@ -53,6 +53,22 @@ saveRDS(res, file = file.path(destination, 'BitSeq_de.rds'))
 # eventually export this into the analysis
 ###
 
+sim_name <- 'gfr_3_3_20_42_2'
+sim_number <- 1
+
+sim_name <- args[1]
+
+source('benchmark_methods.R')
+source('gene_common.R')
+
+base_dir <- '../results/final_figures'
+default_extension <- '.pdf'
+
+sim_info <- parse_simulation(sim_name)
+
+n <- sim_info$a + sim_info$b
+
+
 bitseq <- readRDS(file.path('..', 'results', sim_name, sim_number,
   'BitSeq_de.rds'))
 
@@ -65,7 +81,7 @@ bs_1 <- as.data.frame(bs_1)
 
 # load sleuth result
 each_filter_benchmark <- readRDS(paste0('../results/', sim_name,
-  '/isoform_benchmarks_filter.rds'))
+  '/isoform_benchmarks_filter_lfc.rds'))
 
 sr_1 <- each_filter_benchmark[[1]]$original_data$sleuth
 
@@ -78,6 +94,8 @@ bs_filtered_1 <- dplyr::semi_join(bs_1, sr_1, by = 'target_id')
 bs_filtered_1 <- dplyr::select(bs_filtered_1, target_id, pval, qval)
 
 bs_1 <- dplyr::select(bs_1, target_id, pval, qval)
+
+library('mamabear')
 
 filter_benchmark_bitseq <- new_de_benchmark(
   c(each_filter_benchmark[[1]]$original_data, list(bs_filtered_1, bs_1)),
@@ -98,11 +116,18 @@ tmp <- fdr_efdr_power_plot(fdr_bitseq, start = 100, jump = 100, rank_fdr = 0.10,
   'BitSeq' = 'gray'), fdr_level_position = -0.005,
   ignore_estimated_fdr = c('BitSeq filtered', 'BitSeq'))
 
+simulation_mode <- 'reference'
 current_limits <- switch(simulation_mode,
   independent = list(x = c(-0.01, 0.25), y = c(-0.01, 0.28)),
   common = list(x = c(-0.01, 0.25), y = c(-0.01, 0.20)),
   reference = list(x = c(-0.01, 0.25), y = c(-0.01, 0.075))
   )
+
+library('cowplot')
+theme_hp <- function() {
+  theme_cowplot(25) +
+    theme(legend.key.size = unit(2, "lines"))
+}
 
 p <- tmp + theme_hp()
 p <- p + coord_cartesian(xlim = current_limits$x, ylim = current_limits$y,

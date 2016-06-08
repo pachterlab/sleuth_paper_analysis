@@ -14,6 +14,20 @@ Load things like the transcript to gene mapping and permutation info.
 source('../../geuvadis/R/gene_common.R')
 source('../../geuvadis/R/benchmark_methods.R')
 source('get_metadata.R')
+library('data.table')
+library('cowplot')
+```
+
+```{r}
+theme_hp <- function() {
+  theme_cowplot(25) +
+    theme(legend.key.size = unit(2, "lines"), legend.position = 'none')
+}
+default_extension <- '.pdf'
+base_dir <- file.path('..', 'results', 'final_figures', 'technical_variation')
+if (!dir.exists(base_dir)) {
+  dir.create(base_dir)
+}
 ```
 
 ```{r}
@@ -24,6 +38,7 @@ which_permutation <- sample.int(20, 1)
 ```{r}
 stc <- training_sets[[which_permutation]]
 ```
+
 # transcript level
 
 ```{r}
@@ -42,16 +57,20 @@ if (!file.exists(isoform_file)) {
 get the relevant results out
 
 ```{r}
-sr <- sleuth_results(soi, 'reduced:full', 'lrt')
+sr <- sleuth_results(soi, 'reduced:full', 'lrt', show_all = FALSE)
+```
+
+```{r}
+isoform_alpha = 0.15
 ```
 
 plot the total raw variance
 
 ```{r}
 ggplot(sr, aes(mean_obs, (var_obs) ^ (0.25))) +
-  geom_point(alpha = 0.05) +
+  geom_point(alpha = isoform_alpha) +
   theme_cowplot(25) +
-  xlab('mean( log( x + 0.5 ) )') +
+  xlab('mean( log( counts + 0.5 ) )') +
   ylab('sqrt( total standard deviation )')
 ```
 
@@ -68,7 +87,7 @@ plot the technical variability:
 ggplot(sr, aes(mean_obs, (tech_var) ^ 0.25)) +
   geom_point(alpha = 0.05) +
   theme_cowplot(25) +
-  xlab('mean( log( x + 0.5 ) )') +
+  xlab('mean( log( counts + 0.5 ) )') +
   ylab('sqrt( inferential standard deviation )')
 ```
 
@@ -92,7 +111,7 @@ if (!file.exists(gene_file)) {
   sog <- run_sleuth_prep(stc, gene_mode = 'ens_gene')
   sog <- sleuth_fit(sog, ~1, 'reduced')
   sog <- sleuth_lrt(sog, 'reduced', 'full')
-  saveRDS(sog, file = isoform_file)
+  saveRDS(sog, file = gene_file)
 } else {
   sog <- readRDS(gene_file)
 }
@@ -108,7 +127,7 @@ sr <- sleuth_results(sog, 'reduced:full', 'lrt', show_all = FALSE)
 some global constants
 
 ```{r}
-gene_alpha <- 0.2
+gene_alpha <- 0.4
 ```
 
 plot the total raw variance
@@ -152,7 +171,7 @@ ggplot(sr, aes(mean_obs, (final_sigma_sq + tech_var) ^ 0.25)) +
 ```{r}
 estimate_transformed_variance <- function(mu, effective_length, n, scale_factor) {
   # compute something proportional to TPM
-  res <- sapply(1:1000, function(i) {
+  res <- sapply(1:5000, function(i) {
     y <- rpois(n, mu) / effective_length
     y <- log(scale_factor * y)
     y <- y[is.finite(y)]
@@ -161,35 +180,344 @@ estimate_transformed_variance <- function(mu, effective_length, n, scale_factor)
   t(res)
 }
 
-tmp <- lapply(c(
-  seq(0.5, 5, length.out = 40),
-  seq(5, 500, length.out = 1000),
-  seq(500, 1000000, length.out = 400)),
-  function(mu) {
-    estimate_transformed_variance(mu, 1, 100, 1)
-  })
+# mimic sampling the same number of things that you would in the kallisto bootstrap
+n_bootstrap <- length(sog$kal[[1]]$bootstrap)
 
+set.seed(42)
+system.time(tmp <- lapply(exp(seq(log(0.5), log(10000000), length.out = 3000)),
+  function(mu) {
+    estimate_transformed_variance(mu, 1, n_bootstrap, 1)
+  })
+)
+```
+
+```{r}
 confidence_bands <- lapply(tmp,
   function(x) {
-    qs <- quantile(x[, 2], probs = c(0.05, 0.95), na.rm = TRUE)
+    # compute the lower and upper confidence intervals of the variance estimate
+    qs <- quantile(x[, 2], probs = c(0.05, 0.95, 0.999, 0.25, 0.5, 0.75),
+      na.rm = TRUE)
     data.frame(mean_obs = mean(x[, 1], na.rm = TRUE),
-      lower = qs[1], upper = qs[2], mean_var = mean(x[, 2], na.rm = TRUE))
+      lower = qs[1], upper = qs[2], upper_extreme = qs[3],
+      mean_var = mean(x[, 2], na.rm = TRUE),
+      q25 = qs[4], q50 = qs[5], q75 = qs[6]
+      )
   })
 confidence_bands <- dplyr::bind_rows(confidence_bands)
 confidence_bands <- dplyr::filter(confidence_bands, is.finite(mean_obs))
+confidence_bands <- dplyr::mutate(confidence_bands, iqr = q75 - q25)
+```
+
+a sanity check on the confidence bands to ensure that we are sampling reasonably:
+
+```{r}
+ggplot(confidence_bands, aes(mean_obs, mean_var)) +
+  geom_point() +
+  geom_point(aes(mean_obs, lower), color = 'red') +
+  geom_point(aes(mean_obs, upper), color = 'red') +
+  geom_point(aes(mean_obs, upper_extreme))
+```
+
+## simply looking at 1 replicate
+
+```{r}
+bs_summary <- sleuth:::sleuth_summarize_bootstrap_col(sog, 'est_counts',
+  function(x) log(x + 0.5))
+```
+
+```{r}
+obj_mod <- sog
+
+transform <- function(x) log(x + 0.5)
+
+which_column <- 'ens_gene'
+obj_mod$target_mapping <- dplyr::mutate(obj_mod$target_mapping,
+  target_id = sapply(strsplit(target_id, '\\.'), '[[', 1))
+
+obj_mod$obs_norm <- dplyr::mutate(obj_mod$obs_norm,
+  target_id = sapply(strsplit(target_id, '\\.'), '[[', 1))
+obj_mod$obs_norm_filt <- dplyr::mutate(obj_mod$obs_norm_filt,
+  target_id = sapply(strsplit(target_id, '\\.'), '[[', 1))
+obj_mod$obs_raw <- dplyr::mutate(obj_mod$obs_raw,
+  target_id = sapply(strsplit(target_id, '\\.'), '[[', 1))
+
+# scale_factor <- median(obj_mod$obs_norm_filt$eff_len)
+# begin by gene median
+tmp <- obj_mod$obs_raw
+# tmp <- as.data.table(tmp)
+tmp <- dplyr::left_join(
+  data.table::as.data.table(tmp),
+  data.table::as.data.table(obj_mod$target_mapping),
+  by = 'target_id')
+
+tmp <- dplyr::group_by_(tmp, 'sample', which_column)
+scale_factor <- dplyr::mutate(tmp, scale_factor = median(eff_len))
+# end by gene median
+obj_mod$obs_norm_filt <- sleuth:::reads_per_base_transform(obj_mod$obs_norm_filt,
+  scale_factor, which_column, obj_mod$target_mapping, norm_by_abundance = TRUE)
+obj_mod$obs_norm <- sleuth:::reads_per_base_transform(obj_mod$obs_norm,
+  scale_factor, which_column, obj_mod$target_mapping, norm_by_abundance = TRUE)
+
+obs_counts <- sleuth:::obs_to_matrix(obj_mod, "scaled_reads_per_base")
+obs_counts <- transform(obs_counts)
+
+obj_mod$kal <- lapply(seq_along(obj_mod$kal),
+  function(i) {
+    k <- obj_mod$kal[[i]]
+    current_sample <- obj_mod$sample_to_covariates$sample[i]
+    print(current_sample)
+    k$bootstrap <- lapply(k$bootstrap, function(b) {
+      b <- dplyr::mutate(b,
+        target_id = sapply(strsplit(target_id, '\\.'), '[[', 1))
+      b <- dplyr::mutate(b, sample = current_sample)
+      sleuth:::reads_per_base_transform(b, scale_factor, which_column,
+        obj_mod$target_mapping, norm_by_abundance = TRUE)
+    })
+
+    k
+  })
+
+bs_summary <- sleuth:::sleuth_summarize_bootstrap_col(obj_mod, "scaled_reads_per_base",
+  transform)
+```
+
+```{r}
+which_sample <- 'SRR099228'
+bs_summary <- dplyr::filter(bs_summary, sample == which_sample)
+obs_counts_filter <- obs_counts[sr$target_id, ]
+bs_summary <- dplyr::semi_join(bs_summary, sr, by = 'target_id')
+
+bs_summary <- dplyr::select(bs_summary, target_id,
+  bs_var = bs_var_scaled_reads_per_base)
+em_counts <- data.frame(target_id = rownames(obs_counts_filter),
+  est_counts = obs_counts_filter[, which_sample])
+bs_summary <- dplyr::left_join(bs_summary, em_counts, by = 'target_id')
+
+bs_summary <- dplyr::filter(bs_summary, est_counts > log(0.5))
+```
+
+```{r}
+bs_summary <- dplyr::mutate(bs_summary,
+  cv_estimate = bs_var / est_counts ^ 2,
+  cv_rank = ecdf(cv_estimate)(cv_estimate),
+  cv_top = cv_rank >= 0.90)
+```
+
+perform a rolling join trying to find the nearest simulation Poisson point to the mean of this value.
+also, ensure that the relative error is less than 1%.
+
+```{r}
+bs_summary <- as.data.table(bs_summary)
+setkey(bs_summary, est_counts)
+confidence_bands <- as.data.table(confidence_bands)
+setkey(confidence_bands, mean_obs)
+
+bs_summary_tmp <- bs_summary
+bs_summary_tmp <- bs_summary_tmp[, est_counts_new := est_counts]
+
+bs_summary_roll <- confidence_bands[bs_summary_tmp, roll = 1,
+  rollends = c(TRUE, TRUE), allow.cartesian = TRUE]
+
+bs_summary_roll <- dplyr::rename(bs_summary_roll, est_counts = est_counts_new)
+
+bs_summary_roll <- dplyr::mutate(bs_summary_roll,
+  near_filter = ((est_counts - mean_obs) / est_counts) < 0.01)
+```
+
+now we can find outliers based on how far they are from the expected Poisson:
+
+```{r}
+bs_summary_roll <- dplyr::mutate(bs_summary_roll,
+  outlier = (bs_var > upper_extreme) & near_filter)
+```
+
+use the "outlier rule" with varying multiplicative factors
+
+```{r}
+bs_summary_roll <- dplyr::mutate(bs_summary_roll,
+  iqr_outlier_1.5 = (iqr * 1.5 + q75) < bs_var,
+  iqr_outlier_2 = (iqr * 2 + q75) < bs_var,
+  iqr_outlier_3 = (iqr * 3 + q75) < bs_var,
+  iqr_outlier_10 = (iqr * 10 + q75) < bs_var,
+  iqr_outlier_100 = (iqr * 100 + q75) < bs_var
+  )
+summary(bs_summary_roll)
+```
+
+100 seems to give a reasonable number of outliers
+
+plot inferential variability versus the mean counts
+
+```{r}
+p <- ggplot(bs_summary_roll, aes(est_counts, bs_var ^ 0.25)) +
+  # geom_point(aes(color = outlier), alpha = gene_alpha) +
+  geom_point(aes(color = iqr_outlier_100), alpha = gene_alpha) +
+  scale_color_manual(values = c('black', 'red')) +
+  xlab('log( abundance + 0.5 ) )') +
+  ylab('sqrt( inferential standard deviation )') +
+  geom_path(aes(mean_obs, lower ^ 0.25), color = 'springgreen',
+    size = 0.8, alpha = 0.7, linetype = 1) +
+  geom_path(aes(mean_obs, upper ^ 0.25), color = 'springgreen',
+    size = 0.8, alpha = 0.7, linetype = 1) +
+  geom_path(aes(mean_obs, mean_var ^ 0.25),
+    color = 'springgreen', size = 1.2, alpha = 1) +
+  theme_hp()
+p
+```
+
+```{r}
+filename <- file.path(base_dir, paste0('inferential_variance',
+  default_extension))
+save_plot(filename, p, base_aspect_ratio = 1.6, base_height = 15)
 ```
 
 
+# run DESeq2 and get dispersion estimates
+
 ```{r}
-ggplot(sr, aes(mean_obs, tech_var ^ 0.25)) +
-  geom_point(alpha = gene_alpha) +
+training_sets <- lapply(training_sets,
+  function(df) {
+    df$featureCounts <- file.path('..', 'results', 'single', df$sample,
+      'featureCounts.txt')
+    df
+  })
+
+stc <- training_sets[[which_permutation]]
+gene_names <- unique(transcript_gene_mapping$ens_gene)
+
+dummy_filter <- rep(TRUE, length(gene_names))
+names(dummy_filter) <- gene_names
+
+training_counts <- lapply(training_sets,
+  function(df) {
+    obs <- load_union_counts_general(df$featureCounts, df$sample)
+    current_filter <- intersect(rownames(obs), names(dummy_filter))
+    obs[current_filter, ]
+  })
+
+current_counts <- training_counts[[which_permutation]]
+
+cds <- make_count_data_set(round(current_counts), stc)
+dds <- DESeqDataSetFromMatrix(exprs(cds), DataFrame(pData(cds)), ~ condition)
+dds <- dds[ rowSums(counts(dds)) > 1,]
+dds <- DESeq(dds)
+
+plotDispEsts(dds)
+```
+
+```{r}
+res <- as.data.frame(mcols(dds))
+res <- dplyr::mutate(res, target_id = rownames(dds),
+  final_dispersion = dispersions(dds))
+res <- dplyr::filter(res, baseMean > 0)
+```
+
+join in information about coefficient of variation
+
+```{r}
+res <- dplyr::left_join(res,
+  dplyr::select(bs_summary_roll, target_id, iqr_outlier_100),
+  # dplyr::select(bs_summary_roll, target_id, iqr_outlier_100),
+  by = 'target_id')
+```
+
+smooth variance
+
+```{r}
+moment_estimator <- ggplot(res,
+  aes(log(baseMean), log(baseMean + dispGeneEst * baseMean ^ 2))) +
+  geom_point(aes(color = iqr_outlier_100), alpha = gene_alpha) +
+  # geom_point(aes(color = outlier), alpha = gene_alpha) +
+  scale_color_manual(values = c('black', 'red')) +
   theme_cowplot(25) +
-  xlab('mean( log( x + 0.5 ) )') +
-  ylab('sqrt( inferential standard deviation )') +
-  geom_path(aes(mean_obs, lower ^ 0.25), data = confidence_bands, color = 'red',
-    size = 0.8, alpha = 0.7) +
-  geom_path(aes(mean_obs, upper ^ 0.25), data = confidence_bands, color = 'red',
-    size = 0.8, alpha = 0.7) +
-  geom_path(aes(mean_obs, mean_var ^ 0.25), data = confidence_bands,
-    color = 'dodgerblue', size = 0.8, alpha = 0.7)
+  xlab('log(mean( counts ))') +
+  ylab('log(raw total variance)') +
+  theme_hp()
+
+smooth_variance <- ggplot(res,
+  aes(log(baseMean),
+    log(baseMean + final_dispersion * baseMean ^ 2))) +
+  geom_point(aes(color = iqr_outlier_100), alpha = gene_alpha * 2) +
+  scale_color_manual(values = c('black', 'red')) +
+  xlab('log(mean( counts ))') +
+  ylab('log(final total variance)') +
+  theme_hp()
+
+p <- plot_grid(moment_estimator, smooth_variance)
+p
+filename <- file.path(base_dir, paste0('DESeq2_variance',
+  default_extension))
+save_plot(filename, p, base_aspect_ratio = 1.6, base_height = 15)
+```
+
+some global constants
+
+```{r}
+gene_alpha <- 0.4
+```
+
+merge in the outlier information
+
+```{r}
+sr <- dplyr::left_join(sr,
+  # dplyr::select(bs_summary_roll, target_id, outlier),
+  dplyr::select(bs_summary_roll, target_id, iqr_outlier_100),
+  by = 'target_id')
+```
+
+plot the total raw variance
+
+```{r}
+p <- ggplot(sr, aes(mean_obs, (var_obs) ^ (0.25))) +
+  geom_point(aes(color = iqr_outlier_100), alpha = gene_alpha) +
+  # geom_point(aes(color = outlier), alpha = gene_alpha) +
+  scale_color_manual(values = c('black', 'red')) +
+  theme_hp() +
+  xlab('mean( log( abundance + 0.5 ) )') +
+  ylab('sqrt( total standard deviation )')
+p
+filename <- file.path(base_dir, paste0('total_raw_variance',
+  default_extension))
+save_plot(filename, p, base_aspect_ratio = 1.6, base_height = 15)
+```
+
+plot the biological variance with shrinkage:
+
+```{r}
+tmp_summary <- dplyr::select(sog$fits[['full']]$summary, target_id, iqr)
+sr <- dplyr::left_join(sr, tmp_summary, by = 'target_id')
+```
+
+```{r}
+p <- ggplot(sr, aes(mean_obs, sqrt(sqrt(sigma_sq_pmax))))
+p <- p + geom_point(aes(colour = iqr_outlier_100), alpha = gene_alpha,)
+p <- p + geom_point(aes(color = iqr_outlier_100), alpha = gene_alpha)
+p <- p + geom_line(aes(mean_obs, sqrt(sqrt(smooth_sigma_sq))),
+    alpha = 1, size = 1, colour = 'deepskyblue')
+p <- p + scale_colour_manual(values = c("black", "red"))
+p <- p + theme(legend.position = "none")
+p <- p + xlab("mean( log( abundance + 0.5 ) )")
+p <- p + ylab("sqrt( biological variation )")
+p <- p + theme_hp()
+p
+filename <- file.path(base_dir, paste0('biological_variance',
+  default_extension))
+save_plot(filename, p, base_aspect_ratio = 1.6, base_height = 15)
+```
+
+
+plot the final variability estimates (total)
+
+```{r}
+p <- ggplot(sr, aes(mean_obs, (final_sigma_sq + tech_var) ^ 0.25)) +
+  geom_point(aes(color = iqr_outlier_100), alpha = gene_alpha) +
+  # geom_point(aes(color = outlier), alpha = gene_alpha) +
+  scale_color_manual(values = c('black', 'red')) +
+  theme_hp() +
+  xlab('mean( log( abundance + 0.5 ) )') +
+  ylab('sqrt( final standard deviation )')
+p
+filename <- file.path(base_dir, paste0('final_biological_variance',
+  default_extension))
+save_plot(filename, p, base_aspect_ratio = 1.6, base_height = 15)
 ```

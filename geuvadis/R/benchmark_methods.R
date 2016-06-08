@@ -471,6 +471,33 @@ lfc_filter_and_run <- function(count_matrix, stc, sleuth_filter) {
   list(result = res, filter = sleuth_filter)
 }
 
+lfc_filter_and_run_isoform <- function(count_matrix, stc, filter_input) {
+  which_targets <- sleuth_filter(count_matrix)
+  filter_input <- filter_input & which_targets
+
+  conditionA <- dplyr::filter(stc, condition == 'A')$sample
+  conditionB <- dplyr::filter(stc, condition == 'B')$sample
+
+  counts <- count_matrix[filter_input, ]
+  sf <- DESeq2::estimateSizeFactorsForMatrix(counts)
+  counts_norm <- t(t(counts) / sf)
+
+  B <- rowMeans(counts_norm[, conditionB])
+  A <- rowMeans(counts_norm[, conditionA])
+  lfc <- log(B) - log(A)
+
+  res <- data.frame(target_id = names(lfc), abs_lfc = abs(lfc))
+  res <- dplyr::arrange(res, desc(abs_lfc))
+  res <- dplyr::mutate(res, test_stat = rank(-abs_lfc,
+    ties.method= "random") / length(-abs_lfc))
+  res <- dplyr::select(res, target_id, pval = test_stat)
+  res <- dplyr::mutate(res, qval = pval)
+
+  filter_input <- names(which(filter_input))
+
+  list(result = res, filter = filter_input)
+}
+
 geometric_lfc_filter_and_run <- function(count_matrix, stc, sleuth_filter) {
   which_targets <- edgeR_filter(count_matrix)
   sleuth_filter <- sleuth_filter & which_targets
@@ -497,6 +524,34 @@ geometric_lfc_filter_and_run <- function(count_matrix, stc, sleuth_filter) {
   sleuth_filter <- names(which(sleuth_filter))
 
   list(result = res, filter = sleuth_filter)
+}
+
+geometric_lfc_filter_and_run_isoform <- function(count_matrix, stc, input_filter) {
+  which_targets <- sleuth_filter(count_matrix)
+  filter_input <- filter_input & which_targets
+
+  conditionA <- dplyr::filter(stc, condition == 'A')$sample
+  conditionB <- dplyr::filter(stc, condition == 'B')$sample
+
+  counts <- count_matrix[filter_input, ]
+  sf <- DESeq2::estimateSizeFactorsForMatrix(counts)
+  counts_norm <- t(t(counts) / sf)
+  counts_norm <- log(counts_norm + 0.5)
+
+  B <- rowMeans(counts_norm[, conditionB])
+  A <- rowMeans(counts_norm[, conditionA])
+  lfc <- B - A
+
+  res <- data.frame(target_id = names(lfc), abs_lfc = abs(lfc))
+  res <- dplyr::arrange(res, desc(abs_lfc))
+  res <- dplyr::mutate(res, test_stat = rank(-abs_lfc,
+    ties.method= "random") / length(-abs_lfc))
+  res <- dplyr::select(res, target_id, pval = test_stat)
+  res <- dplyr::mutate(res, qval = pval)
+
+  filter_input <- names(which(filter_input))
+
+  list(result = res, filter = filter_input)
 }
 
 cuffdiff_filter_and_run <- function(count_matrix, stc, sleuth_filter) {
@@ -598,6 +653,7 @@ run_sleuth_prep <- function(sample_info, max_bootstrap = 30,
     target_mapping = transcript_gene_mapping,
     filter_target_id = filter_target_id,
     gene_mode = gene_mode,
+    norm_by_abundance = TRUE,
     ...)
   so <- sleuth_fit(so, empirical_bayes = include_empirical_bayes)
 

@@ -83,13 +83,21 @@ set the number of columns for each grid
 n_grid_columns <- 2
 ```
 
+ignore the following when plotting estimated fdr:
+
+```{r}
+ignore_fdr <- c('GLFC', 'LFC')
+method_colors_lfc <- c(method_colors, c(LFC = 'black', GLFC = 'dimgray'))
+```
+
 # isoform benchmarks
 
 ## fdr/power curves when everyone is using their own filter
 
 ```{r}
 each_filter_benchmark <- readRDS(paste0('../results/', sim_name,
-  '/isoform_benchmarks_filter.rds'))
+  # '/isoform_benchmarks_filter.rds'))
+  '/isoform_benchmarks_filter_lfc.rds'))
 ```
 
 next, let's rename some things for aesthetics
@@ -113,7 +121,8 @@ Zoom into a relevant area:
 
 ```{r}
 tmp <- fdr_efdr_power_plot(current_fdr, start = 100, jump = 100, rank_fdr = 0.10,
-  method_colors = method_colors, fdr_level_position = -0.005)
+  method_colors = method_colors_lfc, fdr_level_position = -0.005,
+  ignore_estimated_fdr = ignore_fdr)
 
 current_limits <- switch(simulation_mode,
   independent = list(x = c(-0.01, 0.25), y = c(-0.01, 0.28)),
@@ -133,7 +142,8 @@ save_plot(filename, p, base_aspect_ratio = 1.6, base_height = 15)
 
 ```{r}
 tmp <- fdr_efdr_power_plot(current_fdr, start = 500, jump = 500, rank_fdr = 0.10,
-  method_colors = method_colors, fdr_level_position = -0.02)
+  method_colors = method_colors_lfc, fdr_level_position = -0.02,
+  ignore_estimated_fdr = ignore_fdr)
 
 p <- tmp +
   coord_cartesian(xlim = c(-0.05, 1), ylim = c(-0.05, 1), expand = FALSE) +
@@ -298,7 +308,8 @@ subset_fdr <- lapply(subset_benchmarks,
 ```{r}
 subset_fdr_power_plot <- lapply(subset_fdr,
   function(bench) {
-    suppressMessages(fdr_efdr_power_plot(bench, start = 100, jump = 100)) +
+    suppressMessages(fdr_efdr_power_plot(bench, start = 100, jump = 100,
+      isolines = FALSE)) +
       theme_hp()
   })
 
@@ -378,7 +389,8 @@ plot_grid(plotlist = all_fdr_power, ncol = n_grid_columns)
 
 ```{r}
 each_filter_benchmark <- readRDS(paste0('../results/', sim_name,
-  '/gene_benchmarks_filter.rds'))
+  # '/gene_benchmarks_filter.rds'))
+  '/gene_benchmarks_filter_lfc.rds'))
 ```
 
 next, let's rename some things for aesthetics
@@ -400,10 +412,11 @@ Zoom into a relevant area:
 
 ```{r}
 tmp <- fdr_efdr_power_plot(current_fdr, start = 100, jump = 100, rank_fdr = 0.10,
-  method_colors = method_colors, fdr_level_position = -0.005)
+  method_colors = method_colors_lfc, fdr_level_position = -0.005,
+  ignore_estimated_fdr = ignore_fdr)
 
 current_limits <- switch(simulation_mode,
-  independent = list(x = c(-0.01, 0.25), y = c(-0.01, 0.10)),
+  independent = list(x = c(-0.01, 0.25), y = c(-0.01, 0.25)),
   common = list(x = c(-0.01, 0.25), y = c(-0.01, 0.70)),
   reference = list(x = c(-0.01, 0.25), y = c(-0.01, 0.25))
   )
@@ -419,9 +432,9 @@ save_plot(filename, p, base_aspect_ratio = 1.6, base_height = 15)
 ```
 
 ```{r}
-debugonce(fdr_efdr_power_plot)
 tmp <- fdr_efdr_power_plot(current_fdr, start = 500, jump = 500, rank_fdr = 0.10,
-  method_colors = method_colors, fdr_level_position = -0.02)
+  method_colors = method_colors_lfc, fdr_level_position = -0.02,
+  ignore_estimated_fdr = ignore_fdr)
 
 p <- tmp +
   coord_cartesian(xlim = c(-0.05, 1), ylim = c(-0.05, 1), expand = FALSE) +
@@ -576,7 +589,8 @@ subset_fdr <- lapply(subset_benchmarks,
 ```{r}
 subset_fdr_power_plot <- lapply(subset_fdr,
   function(bench) {
-    suppressMessages(fdr_efdr_power_plot(bench, start = 100, jump = 100)) +
+    suppressMessages(fdr_efdr_power_plot(bench, start = 100, jump = 100,
+      isolines = FALSE)) +
       theme_hp()
   })
 

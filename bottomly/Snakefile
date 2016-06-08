@@ -66,7 +66,8 @@ rule all:
         expand('results/validation/{num}/cuffdiff/isoform_exp.diff',
             num = range(1, 21)),
 
-        'R/fdr.html'
+        'R/fdr.html',
+        'R/var_plots.html'
 
         # 'R/isoform_benchmarks.html',
         # 'R/auc.html'
@@ -305,6 +306,15 @@ rule fdr_plots:
         'R/fdr.html'
     shell:
         source_rmd('R', 'fdr.Rmd')
+
+rule variance_plots:
+    input:
+        'results/isoform_self_benchmark.rds',
+        'results/gene_self_benchmark.rds'
+    output:
+        'R/var_plots.html'
+    shell:
+        source_rmd('R', 'var_plots.Rmd')
 
 rule clean:
     shell:
