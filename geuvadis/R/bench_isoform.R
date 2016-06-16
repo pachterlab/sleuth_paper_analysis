@@ -85,33 +85,3 @@ all_benchmarks <- lapply(all_results,
 
 saveRDS(all_benchmarks, file = paste0('../results/', sim_name,
   '/isoform_benchmarks.rds'))
-
-
-#
-# saveRDS(all_nde_plot, file = '../sims/new_all_nde_plot.rds')
-#
-# all_nde_plot <- readRDS('../sims/new_all_nde_plot.rds')
-#
-#
-# saveRDS(all_nde_plot, file = '../sims/temporary_all_nde_plot.rds')
-#
-# all_nde_plot <- readRDS('../sims/temporary_all_nde_plot.rds')
-#
-# ###
-# # TODO: remove this... for debugging
-# ###
-#
-# cat('Sample: ', i, '\n')
-#
-# sim_info <- get_de_info(sim_name, 1, transcript_gene_mapping)
-#
-# tmp <- load_isoform_results_intersect(sim_name, 1, 'limmaVoom', limma_filter_and_run,
-#   include_empirical_bayes = TRUE)
-#
-# tmp_bench <- new_de_benchmark(tmp, names(tmp), sim_info$de_info)
-#
-# fdr_nde_plot(tmp_bench) +
-#   xlim(0, 3000) +
-#   ylim(0, 0.10) +
-#   theme_cowplot(25) +
-#   theme(legend.position = c(0.15, 0.80))

@@ -183,7 +183,6 @@ load_isoform_results_intersect <- function(
   which_sample,
   method_label,
   method_fit_function,
-  include_empirical_bayes = FALSE,
   ...) {
   sim <- parse_simulation(sim_name)
 
@@ -212,23 +211,9 @@ load_isoform_results_intersect <- function(
   method_result <- method_fit_function(obs_raw, sample_to_condition,
     s_which_filter)
   sir <- run_sleuth(sample_to_condition, gene_mode = NULL,
-    filter_target_id = method_result$filter,
-    include_empirical_bayes = FALSE)
+    filter_target_id = method_result$filter)
 
   all_results <- Filter(is.data.frame, sir)
-
-  if (include_empirical_bayes) {
-    seb <- run_sleuth(sample_to_condition, gene_mode = NULL,
-      filter_target_id = method_result$filter,
-      include_empirical_bayes = TRUE)
-    seb <- Filter(is.data.frame, seb)
-    names(seb) <- paste0(names(seb), '.eb')
-    all_results <- c(all_results, seb)
-  }
-
-  # TODO: adjust the fdr based off of the filtering scheme
-  # e.g. take the intersection of the tests and recompute the fdr
-  # This ensures that the calibration tests can be comparable
 
   all_results[[method_label]] <- method_result$result
 
@@ -249,7 +234,6 @@ load_isoform_results_intersect_df <- function(
   sample_to_condition,
   method_label,
   method_fit_function,
-  include_empirical_bayes = FALSE,
   ...) {
 
   sample_to_condition <- as.data.frame(sample_to_condition,
@@ -269,24 +253,11 @@ load_isoform_results_intersect_df <- function(
   method_result <- method_fit_function(obs_raw, sample_to_condition,
     s_which_filter)
   sir <- run_sleuth(sample_to_condition, gene_mode = NULL,
-    filter_target_id = method_result$filter,
-    include_empirical_bayes = FALSE)
+    filter_target_id = method_result$filter)
 
   all_results <- Filter(is.data.frame, sir)
 
   message('### Running sleuth...')
-  if (include_empirical_bayes) {
-    seb <- run_sleuth(sample_to_condition, gene_mode = NULL,
-      filter_target_id = method_result$filter,
-      include_empirical_bayes = TRUE)
-    seb <- Filter(is.data.frame, seb)
-    names(seb) <- paste0(names(seb), '.eb')
-    all_results <- c(all_results, seb)
-  }
-
-  # TODO: adjust the fdr based off of the filtering scheme
-  # e.g. take the intersection of the tests and recompute the fdr
-  # This ensures that the calibration tests can be comparable
 
   all_results[[method_label]] <- method_result$result
 
@@ -298,7 +269,6 @@ load_gene_results_intersect <- function(
   which_sample,
   method_label,
   method_fit_function,
-  include_empirical_bayes = FALSE,
   ...) {
   sim <- parse_simulation(sim_name)
 
@@ -342,19 +312,11 @@ load_gene_results_intersect <- function(
   # since the gene filter is derived from the isoform filter, just use the sleuth
   # filter for gene lifting
   # debugonce(sleuth_prep)
-  if (include_empirical_bayes) {
-    message('### running empirical bayes')
-    slr <- run_sleuth(sample_to_condition, gene_mode = 'aggregate',
-      filter_target_id = method_result$filter, gene_column = 'ens_gene',
-      include_empirical_bayes = TRUE)
-    slr <- Filter(is.data.frame, slr)
-    names(slr) <- paste0(names(slr), '.eb')
-  } else {
-    message('### running gene lifting')
-    slr <- run_sleuth(sample_to_condition, gene_mode = 'lift')
-    slr <- Filter(is.data.frame, slr)
-    names(slr) <- paste0(names(slr), '.lift')
-  }
+
+  message('### running gene lifting')
+  slr <- run_sleuth(sample_to_condition, gene_mode = 'lift')
+  slr <- Filter(is.data.frame, slr)
+  names(slr) <- paste0(names(slr), '.lift')
 
   message('### running gene aggregation')
   sar <- run_sleuth(sample_to_condition, gene_mode = 'aggregate',
@@ -648,14 +610,14 @@ make_count_data_set <- function(counts, sample_info) {
 
 run_sleuth_prep <- function(sample_info, max_bootstrap = 30,
   filter_target_id = NULL, gene_mode = NULL,
-  include_empirical_bayes = FALSE, ...) {
+  ...) {
   so <- sleuth_prep(sample_info, ~ condition, max_bootstrap = max_bootstrap,
     target_mapping = transcript_gene_mapping,
     filter_target_id = filter_target_id,
     gene_mode = gene_mode,
-    norm_by_abundance = TRUE,
+    norm_by_length = TRUE,
     ...)
-  so <- sleuth_fit(so, empirical_bayes = include_empirical_bayes)
+  so <- sleuth_fit(so)
 
   so
 }
@@ -666,21 +628,18 @@ run_sleuth <- function(sample_info,
   gene_mode = NULL,
   gene_column = NULL,
   filter_target_id = NULL,
-  include_empirical_bayes = FALSE,
   ...) {
 
   so <- NULL
   if (!is.null(gene_column)) {
     so <- run_sleuth_prep(sample_info, max_bootstrap = max_bootstrap,
-      include_empirical_bayes = include_empirical_bayes,
       filter_target_id = filter_target_id, gene_mode = gene_column, ...)
   } else {
   so <- run_sleuth_prep(sample_info, max_bootstrap = max_bootstrap,
-    include_empirical_bayes = include_empirical_bayes,
     filter_target_id = filter_target_id, ...)
   }
   so <- sleuth_wt(so, 'conditionB')
-  so <- sleuth_fit(so, ~ 1, 'reduced', empirical_bayes = include_empirical_bayes)
+  so <- sleuth_fit(so, ~ 1, 'reduced')
   so <- sleuth_lrt(so, 'reduced', 'full')
 
   res <- NULL
