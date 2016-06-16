@@ -746,6 +746,8 @@ rule bowtie_alignment:
 # Command 'Rscript --vanilla --default-packages=methods,stats,utils -e 'setwd("R")' -e 'source("BitSeq_getExpression.R")' ../sims/gfr_3_3_20_42_2/exp_1/6/bowtie.bam /home/hjp/sleuth_paper_analysis/annotation/Homo_sapiens.GRCh38.cd
 # na.all.rel80.fa sims/gfr_3_3_20_42_2/exp_1/6/BitSeq' returned non-zero exit status -11
 
+# defunct, but might use in the future
+
 rule BitSeq_expression:
     input:
         'sims/{experiment}/exp_{num}/{id}/bowtie.bam'
@@ -763,6 +765,8 @@ rule BitSeq_expression:
     shell:
         source_r('R', 'BitSeq_getExpression.R') +
         ' ../{input} {TRANSCRIPTOME_FA} {params.prefix}'
+
+# end defunct
 
 rule BitSeq_expression_parseAlignment:
     input:

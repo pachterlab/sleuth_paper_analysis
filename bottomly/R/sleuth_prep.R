@@ -85,15 +85,6 @@ target_set <- dplyr::inner_join(sleuth_table, target_set, by = 'target_id')
 
 target_set <- dplyr::arrange(target_set, desc(qval), desc(tech_var))
 
-# Weird things
-# ENSMUST00000027800.14
-# ENSMUST00000084497.11
-# ENSMUST00000031414.14
-
-# ENSMUST00000113388.2
-
-# ENSMUST00000043866.7
-
 
 kt <- kallisto_table(so, use_filtered = TRUE)
 
