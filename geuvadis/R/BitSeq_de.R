@@ -42,7 +42,8 @@ expression_file <- lapply(expression_file,
 
 library('BitSeq')
 
-system.time(res <- getDE(expression_file, samples = TRUE, seed = 42))
+bs_timing <- system.time(res <- getDE(expression_file, samples = TRUE, seed = 42))
+saveRDS(bs_timing, file = file.path(destination, 'bs_timing.rds'))
 
 destination <- file.path('..', 'results', sim_name, sim_number)
 suppressWarnings(dir.create(destination))
@@ -52,11 +53,12 @@ saveRDS(res, file = file.path(destination, 'BitSeq_de.rds'))
 ###
 # eventually export this into the analysis
 ###
+sim_name <- args[1]
+
 
 sim_name <- 'gfr_3_3_20_42_2'
 sim_number <- 1
 
-sim_name <- args[1]
 
 source('benchmark_methods.R')
 source('gene_common.R')

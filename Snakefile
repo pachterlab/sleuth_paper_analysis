@@ -34,6 +34,7 @@ rule collate_figures:
         'final_figures.tar.gz'
     params:
         output = 'final_figures'
+    threads: 10
     shell:
         'touch {params.output}'
         ' && '
@@ -45,6 +46,6 @@ rule collate_figures:
         ' && '
         'cp -rf bottomly/results/final_figures/* {params.output}'
         ' && '
-        'find {params.output} -name "*.pdf" | xargs -I$ convert $ $.png'
+        'find {params.output} -name "*.pdf" | xargs -P 10 -I$ convert $ $.png'
         ' && '
         'tar -cvvf {output} {params.output}'

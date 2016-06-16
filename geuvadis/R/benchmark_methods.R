@@ -526,7 +526,7 @@ geometric_lfc_filter_and_run <- function(count_matrix, stc, sleuth_filter) {
   list(result = res, filter = sleuth_filter)
 }
 
-geometric_lfc_filter_and_run_isoform <- function(count_matrix, stc, input_filter) {
+geometric_lfc_filter_and_run_isoform <- function(count_matrix, stc, filter_input) {
   which_targets <- sleuth_filter(count_matrix)
   filter_input <- filter_input & which_targets
 

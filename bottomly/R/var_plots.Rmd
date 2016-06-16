@@ -127,7 +127,7 @@ sr <- sleuth_results(sog, 'reduced:full', 'lrt', show_all = FALSE)
 some global constants
 
 ```{r}
-gene_alpha <- 0.4
+gene_alpha <- 0.7
 ```
 
 plot the total raw variance
@@ -344,6 +344,12 @@ bs_summary_roll <- dplyr::mutate(bs_summary_roll,
 summary(bs_summary_roll)
 ```
 
+some global constants
+
+```{r}
+gene_alpha <- 0.55
+```
+
 100 seems to give a reasonable number of outliers
 
 plot inferential variability versus the mean counts
@@ -437,7 +443,7 @@ moment_estimator <- ggplot(res,
 smooth_variance <- ggplot(res,
   aes(log(baseMean),
     log(baseMean + final_dispersion * baseMean ^ 2))) +
-  geom_point(aes(color = iqr_outlier_100), alpha = gene_alpha * 2) +
+  geom_point(aes(color = iqr_outlier_100), alpha = gene_alpha) +
   scale_color_manual(values = c('black', 'red')) +
   xlab('log(mean( counts ))') +
   ylab('log(final total variance)') +
@@ -448,12 +454,6 @@ p
 filename <- file.path(base_dir, paste0('DESeq2_variance',
   default_extension))
 save_plot(filename, p, base_aspect_ratio = 1.6, base_height = 15)
-```
-
-some global constants
-
-```{r}
-gene_alpha <- 0.4
 ```
 
 merge in the outlier information
