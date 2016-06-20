@@ -1,3 +1,6 @@
+source('../../geuvadis/R/benchmark_methods.R')
+source('../../geuvadis/R/gene_common.R')
+
 metadata <- read.csv('../metadata/experiment.csv', stringsAsFactors = FALSE)
 
 extract_metadata <- function(library_name) {

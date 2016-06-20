@@ -7,6 +7,18 @@ This repo contains all of the code to reproduce the results in the [sleuth prepr
 
 - Install [snakemake](https://bitbucket.org/johanneskoester/snakemake)
 - Download and install `R` along with dependencies listed below (R dependencies section)
+- Updated the `BASE` variable in `config.py` to represent the base path on your system
+
+# Organization
+
+The code is organized into a few different directories, each with a theme:
+
+- `annotation`: pulls down the different annotations used and creates indeces
+- `bottomly`: analysis related to the Bottomly et al. data, particular the 'self-consistency FDR' experiments
+- `cuffdiff2_analysis`: analysis of the Trapnell et al. dataset to extract effect sizes from that dataset
+- `geuvadis`: the bulk of the simulations, based on results from the GEUVADIS data
+- `simulation_core`: dependencies for the simulations in the `geuvadis` directory
+- `software`: the bulk of the software used, not including the R dependencies
 
 # R dependencies
 
