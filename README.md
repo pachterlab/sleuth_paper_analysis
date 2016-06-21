@@ -56,7 +56,7 @@ Then, you should be able to install packages using the `biocLite()` function.
 
 ### from GitHub
 
-- `[sleuth v0.28.1](https://github.com/pachterlab/sleuth/tree/bioRxiv)` fork with some modifications: `devtools::install_github('pachterlab/sleuth', ref = 'bioRxiv')`
+- [`sleuth v0.28.1`](https://github.com/pachterlab/sleuth/tree/bioRxiv) fork with some modifications: `devtools::install_github('pachterlab/sleuth', ref = 'bioRxiv')`
 - `mamabear v0.2`: `devtools::install_github('pimentel/mamabear', ref = 'v0.2')`
 
 # Bug reports
