@@ -1,0 +1,418 @@
+---
+  title: "stratifying results based on isoform complexity"
+  output:
+    html_document:
+      fig_height: 20
+      fig_width: 20
+---
+
+# preliminaries
+
+```{r, eval=FALSE}
+n_cpu <- 20
+sim_name <- 'gfr_3_3_20_42_2'
+sim_name <- 'gcd_3_3_20_1_2'
+sim_name <- 'isoform_3_3_20_1_1'
+```
+
+
+```{r}
+args <- commandArgs(trailingOnly = TRUE)
+if (length(args) != 2) {
+  stop('Usage: RScript N_CPU EXPERIMENT_STRING')
+}
+n_cpu <- args[1]
+sim_name <- args[2]
+```
+
+The simulation string is:
+
+```{r}
+sim_name
+```
+
+We use the variable `simulation_mode` to build different axes depending on the simulation.
+These axes have been tuned by hand.
+
+```{r}
+prefix <- strsplit(sim_name, '_')[[1]][1]
+simulation_mode <- switch(prefix,
+  'isoform' = 'independent',
+  'gcd' = 'common',
+  'gfr' = 'reference',
+  stop(paste0('unrecognized simulation type. Please check the `sim_name`: ',
+    sim_name)
+  ))
+```
+
+The simulation mode is: `R simulation_mode`.
+
+Some more global variables on where to save the figures:
+
+```{r}
+base_dir <- '../results/final_figures'
+default_extension <- '.pdf'
+```
+
+A theme that seems to save well:
+
+```{r}
+theme_hp <- function() {
+  theme_cowplot(25) +
+    theme(legend.key.size = unit(2, "lines"))
+}
+```
+
+## load packages
+
+```{r}
+suppressPackageStartupMessages({
+library('cowplot')
+library('data.table')
+library('dplyr')
+library('mamabear')
+library('parallel')
+})
+source('gene_common.R')
+source('benchmark_methods.R')
+options(mc.cores = n_cpu)
+```
+
+set the number of columns for each grid
+
+```{r}
+n_grid_columns <- 2
+```
+
+ignore the following when plotting estimated fdr:
+
+```{r}
+ignore_fdr <- c('GLFC', 'LFC')
+# method_colors_lfc <- c(method_colors, c(LFC = 'black', GLFC = 'dimgray'))
+method_colors_lfc <- c(method_colors, c(LFC = '#4393c3', GLFC = '#fddbc7'))
+```
+
+# isoform benchmarks
+
+first, extract all of the original data
+
+```{r}
+each_filter_benchmark <- readRDS(paste0('../results/', sim_name,
+  '/isoform_benchmarks_filter_lfc_clean.rds'))
+```
+
+```{r}
+original_data <- lapply(each_filter_benchmark,
+  function(benchmark) {
+    benchmark$original_data
+  })
+```
+
+Next, let's break them into different categories and stratify them.
+
+```{r}
+transcript_gene_mapping <- get_human_gene_names()
+```
+
+If more than `maximum_isoforms`, pool them all together.
+
+```{r}
+maximum_isoforms <- 6
+isoform_per_gene <- dplyr::summarize(
+  dplyr::group_by(transcript_gene_mapping, ens_gene),
+  n_isoform = pmin(length(target_id), maximum_isoforms))
+transcript_gene_mapping <- dplyr::left_join(transcript_gene_mapping, isoform_per_gene,
+  by = 'ens_gene')
+```
+
+```{r}
+original_data <- lapply(original_data,
+  function(benchmark) {
+    lapply(benchmark, function(x) dplyr::left_join(x, transcript_gene_mapping, by = 'target_id'))
+  })
+
+unique_values <- unlist(lapply(original_data, function(bench) {
+    unlist(lapply(bench, '[[', 'n_isoform'), use.names = FALSE)
+  }), use.names = FALSE) %>%
+  unique
+
+unique_values <- sort(unique_values)
+```
+
+```{r}
+original_oracle <- lapply(each_filter_benchmark, '[[', 'oracle')
+```
+
+```{r}
+stratified_results <- lapply(unique_values,
+  function(i) {
+    lapply(original_data, function(benchmark) {
+      lapply(benchmark, function(x) dplyr::filter(x, n_isoform == i))
+    })
+  })
+```
+
+```{r}
+stratified_oracle <- lapply(original_oracle,
+  function(oracle) {
+    dplyr::left_join(oracle, transcript_gene_mapping, by = 'target_id')
+  })
+
+stratified_oracle <- lapply(unique_values,
+  function(i) {
+    lapply(stratified_oracle, function(oracle) {
+      dplyr::filter(oracle, n_isoform == i)
+    })
+  })
+```
+
+```{r}
+stratified_benchmark <- lapply(seq_along(stratified_results),
+  function(i) {
+    # i refers to the strata
+    results <- stratified_results[[i]]
+    lapply(seq_along(results), function(j) {
+      # j refers to the jth list of results
+      res <- results[[j]]
+      new_de_benchmark(res, names(res), stratified_oracle[[i]][[j]],
+        de_colors = method_colors_lfc, join_mode = 'union')
+    })
+  })
+```
+
+```{r}
+stratified_fdr <- lapply(stratified_benchmark,
+  function(benchmark) {
+    suppressMessages(current_fdr <- get_fdr(benchmark, sim_filter = TRUE)$pvals)
+  })
+saveRDS(stratified_fdr, paste0('../results/', sim_name,
+  '/stratified_fdr_isoform.rds'))
+```
+
+```{r eval=FALSE}
+stratified_fdr <- readRDS(paste0('../results/', sim_name,
+  '/stratified_fdr_isoform.rds'))
+```
+
+```{r}
+current_limits <- switch(simulation_mode,
+  independent = list(x = c(-0.01, 0.25), y = c(-0.01, 0.28)),
+  common = list(x = c(-0.01, 0.25), y = c(-0.01, 0.20)),
+  reference = list(x = c(-0.01, 0.25), y = c(-0.01, 0.25))
+  )
+
+stratified_zoom <- lapply(stratified_fdr,
+  function(current_fdr) {
+    tmp <- fdr_efdr_power_plot(current_fdr, start = 100, jump = 100, rank_fdr = 0.10,
+      method_colors = method_colors_lfc, fdr_level_position = -0.005,
+      # ignore fdr for everyone since it's computed on the whole
+      ignore_estimated_fdr = unique(current_fdr$method))
+
+    p <- tmp + theme_hp()
+    p <- p + coord_cartesian(xlim = current_limits$x, ylim = current_limits$y,
+      expand = FALSE)
+    p
+})
+```
+
+```{r}
+p <- plot_grid(plotlist = stratified_zoom, labels = paste0('(',
+  letters[1:length(stratified_zoom)], ')'))
+p
+```
+
+```{r}
+filename <- file.path(base_dir, paste0('stratify_isoform.each_filter_', sim_name,
+  default_extension))
+save_plot(filename, p, base_aspect_ratio = 1.6, base_height = 15)
+```
+
+```{r}
+stratified_no_zoom <- lapply(stratified_fdr,
+  function(current_fdr) {
+    tmp <- fdr_efdr_power_plot(current_fdr, start = 500, jump = 500, rank_fdr = 0.10,
+      method_colors = method_colors_lfc, fdr_level_position = -0.02,
+      ignore_estimated_fdr = unique(current_fdr$method))
+
+    p <- tmp +
+      coord_cartesian(xlim = c(-0.05, 1), ylim = c(-0.05, 1), expand = FALSE) +
+      theme_hp()
+    p <- p + guides(colour = guide_legend(override.aes = list(size=5)))
+    p <- p +
+      geom_polygon(aes(x, y), alpha = 0.20,
+        data = data.frame(
+        x = c(0, 0, current_limits$x[2], current_limits$x[2]),
+        y = c(0, current_limits$y[2], current_limits$y[2], 0)))
+    p
+  })
+```
+
+```{r}
+p <- plot_grid(plotlist = stratified_no_zoom, labels = paste0('(',
+  letters[1:length(stratified_zoom)], ')'))
+p
+```
+
+```{r}
+filename <- file.path(base_dir, paste0('stratify_isoform.each_filter_nozoom_', sim_name,
+  default_extension))
+save_plot(filename, p, base_aspect_ratio = 1.6, base_height = 15)
+```
+
+--------------------------------------------------------------------------------
+
+# gene results
+
+```{r}
+each_filter_benchmark <- readRDS(paste0('../results/', sim_name,
+  '/gene_benchmarks_filter_lfc_clean.rds'))
+```
+
+```{r}
+original_data <- lapply(each_filter_benchmark,
+  function(benchmark) {
+    benchmark$original_data
+  })
+```
+```{r}
+gene_isoform_mapping <- dplyr::select(transcript_gene_mapping, target_id = ens_gene,
+  n_isoform)
+gene_isoform_mapping <- dplyr::distinct(gene_isoform_mapping)
+```
+
+```{r}
+original_data <- lapply(original_data,
+  function(benchmark) {
+    lapply(benchmark, function(x) dplyr::left_join(x, gene_isoform_mapping, by = 'target_id'))
+  })
+
+unique_values <- unlist(lapply(original_data, function(bench) {
+    unlist(lapply(bench, '[[', 'n_isoform'), use.names = FALSE)
+  }), use.names = FALSE) %>%
+  unique
+
+unique_values <- sort(unique_values)
+```
+
+
+```{r}
+original_oracle <- lapply(each_filter_benchmark, '[[', 'oracle')
+```
+
+```{r}
+stratified_results <- lapply(unique_values,
+  function(i) {
+    lapply(original_data, function(benchmark) {
+      lapply(benchmark, function(x) dplyr::filter(x, n_isoform == i))
+    })
+  })
+```
+
+```{r}
+stratified_oracle <- lapply(original_oracle,
+  function(oracle) {
+    dplyr::left_join(oracle, gene_isoform_mapping, by = 'target_id')
+  })
+
+stratified_oracle <- lapply(unique_values,
+  function(i) {
+    lapply(stratified_oracle, function(oracle) {
+      dplyr::filter(oracle, n_isoform == i)
+    })
+  })
+```
+
+```{r}
+stratified_benchmark <- lapply(seq_along(stratified_results),
+  function(i) {
+    # i refers to the strata
+    results <- stratified_results[[i]]
+    lapply(seq_along(results), function(j) {
+      # j refers to the jth list of results
+      res <- results[[j]]
+      new_de_benchmark(res, names(res), stratified_oracle[[i]][[j]],
+        de_colors = method_colors_lfc, join_mode = 'union')
+    })
+  })
+```
+
+
+```{r}
+stratified_fdr <- lapply(stratified_benchmark,
+  function(benchmark) {
+    suppressMessages(current_fdr <- get_fdr(benchmark)$pvals)
+    current_fdr
+  })
+saveRDS(stratified_fdr, paste0('../results/', sim_name,
+  '/stratified_fdr_gene.rds'))
+```
+
+```{r eval=FALSE}
+stratified_fdr <- readRDS(paste0('../results/', sim_name,
+  '/stratified_fdr_gene.rds'))
+```
+
+```{r}
+current_limits <- switch(simulation_mode,
+  independent = list(x = c(-0.01, 0.25), y = c(-0.01, 0.28)),
+  common = list(x = c(-0.01, 0.25), y = c(-0.01, 0.20)),
+  reference = list(x = c(-0.01, 0.25), y = c(-0.01, 0.25))
+  )
+stratified_zoom <- lapply(stratified_fdr,
+  function(current_fdr) {
+    tmp <- fdr_efdr_power_plot(current_fdr, start = 100, jump = 100, rank_fdr = 0.10,
+      method_colors = method_colors_lfc, fdr_level_position = -0.005,
+      # ignore fdr for everyone since it's computed on the whole
+      ignore_estimated_fdr = unique(current_fdr$method))
+
+    p <- tmp + theme_hp()
+    p <- p + coord_cartesian(xlim = current_limits$x, ylim = current_limits$y,
+      expand = FALSE)
+    p <- p + guides(colour = guide_legend(override.aes = list(size=5)))
+    p
+})
+```
+
+```{r}
+p <- plot_grid(plotlist = stratified_zoom, labels = paste0('(',
+  letters[1:length(stratified_zoom)], ')'))
+p
+```
+
+```{r}
+filename <- file.path(base_dir, paste0('stratify_gene.each_filter_', sim_name,
+  default_extension))
+save_plot(filename, p, base_aspect_ratio = 1.6, base_height = 15)
+```
+
+```{r}
+stratified_no_zoom <- lapply(stratified_fdr,
+  function(current_fdr) {
+    tmp <- fdr_efdr_power_plot(current_fdr, start = 500, jump = 500, rank_fdr = 0.10,
+      method_colors = method_colors_lfc, fdr_level_position = -0.02,
+      ignore_estimated_fdr = unique(current_fdr$method))
+
+    p <- tmp +
+      coord_cartesian(xlim = c(-0.05, 1), ylim = c(-0.05, 1), expand = FALSE) +
+      theme_hp()
+    p <- p +
+      geom_polygon(aes(x, y), alpha = 0.20,
+        data = data.frame(
+        x = c(0, 0, current_limits$x[2], current_limits$x[2]),
+        y = c(0, current_limits$y[2], current_limits$y[2], 0)))
+    p <- p + guides(colour = guide_legend(override.aes = list(size=5)))
+    p
+  })
+```
+
+```{r}
+p <- plot_grid(plotlist = stratified_no_zoom, labels = paste0('(',
+  letters[1:length(stratified_no_zoom)], ')'))
+p
+```
+
+```{r}
+filename <- file.path(base_dir, paste0('stratify_gene.each_filter_nozoom_', sim_name,
+  default_extension))
+save_plot(filename, p, base_aspect_ratio = 1.6, base_height = 15)
+```

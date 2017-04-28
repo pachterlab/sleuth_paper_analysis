@@ -1,23 +1,15 @@
-args <- commandArgs(trailingOnly = TRUE)
-
-if (length(args) != 3) {
-  stop('Usage: Rscript BitSeq_de.R SIM_NAME TRANSCRIPTOME_FA OUTPUT_PREFIX')
-}
-
-# alignment_file <- '../sims/gfr_3_3_20_42_2/exp_1/3/bowtie.bam'
+# args <- commandArgs(trailingOnly = TRUE)
 #
-# alignment_file <- '../sims/gfr_3_3_20_42_2/exp_1/5/bowtie.bam'
-# transcriptome <- '../../annotation/Homo_sapiens.GRCh38.cdna.all.rel80.fa'
-# out <- '../sims/gfr_3_3_20_42_2/exp_1/5/BitSeq'
+# if (length(args) != 3) {
+#   stop('Usage: Rscript BitSeq_de.R SIM_NAME TRANSCRIPTOME_FA OUTPUT_PREFIX')
+# }
 
-# alignment_file <- args[1]
-# transcriptome <- args[2]
-# out <- args[3]
+
 
 sim_name <- 'gfr_3_3_20_42_2'
 sim_number <- 1
 
-sim_name <- args[1]
+# sim_name <- args[1]
 
 source('benchmark_methods.R')
 source('gene_common.R')
@@ -112,10 +104,13 @@ filter_benchmark_bitseq <- list(filter_benchmark_bitseq)
 fdr_bitseq <- suppressMessages(get_fdr(filter_benchmark_bitseq,
   sim_filter = TRUE)$pvals)
 
+#
+fdr_bitseq <- dplyr::filter(fdr_bitseq, !grepl('LFC', method))
+method_colors_bs <- c(method_colors, 'BitSeq filtered' = '#4393c3', 'BitSeq' = '#fddbc7')
+
 # produce a zoomed in version of the plot
 tmp <- fdr_efdr_power_plot(fdr_bitseq, start = 100, jump = 100, rank_fdr = 0.10,
-  method_colors = c(method_colors, 'BitSeq filtered' = 'black',
-  'BitSeq' = 'gray'), fdr_level_position = -0.005,
+  method_colors = method_colors_bs, fdr_level_position = -0.005,
   ignore_estimated_fdr = c('BitSeq filtered', 'BitSeq'))
 
 simulation_mode <- 'reference'
@@ -142,8 +137,7 @@ save_plot(filename, p, base_aspect_ratio = 1.6, base_height = 15)
 
 # produce the zoomed out version of the plot
 tmp <- fdr_efdr_power_plot(fdr_bitseq, start = 500, jump = 500, rank_fdr = 0.10,
-  method_colors = c(method_colors, 'BitSeq filtered' = 'black',
-  'BitSeq' = 'gray'), fdr_level_position = -0.02,
+  method_colors = method_colors_bs, fdr_level_position = -0.02,
   ignore_estimated_fdr = c('BitSeq filtered', 'BitSeq'))
 
 p <- tmp +

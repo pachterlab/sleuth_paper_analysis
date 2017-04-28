@@ -94,6 +94,7 @@ significant_genes <- dplyr::inner_join(
   by = 'ens_gene')
 ```
 
+
 # getting the fold changes
 
 ## getting the ranks within the data set
@@ -188,6 +189,39 @@ saveRDS(fc, '../results/fc.rds')
 ```
 
 ## some summaries
+
+```{r}
+library(VennDiagram)
+which_genes <- list(sleuth = sr$ens_gene, DESeq2 = ds_res$ens_gene)
+
+grid.newpage()
+p <- draw.pairwise.venn(
+  area1 = nrow(sr), area2 = nrow(ds_res),
+  cross.area = length(intersect(sr$ens_gene, ds_res$ens_gene)),
+  category = c('sleuth', 'DESeq2'),
+  fill = c("light blue", "green"),
+  alpha = rep(0.5, 2),
+  ext.text = TRUE)
+  # fontfamily = "Verdana",
+  # cat.fontfamily = rep("Verdana", 2))
+p
+
+pdf('../results/venn.pdf', width = 12, height = 8)
+grid.draw(p)
+dev.off()
+```
+
+```{r}
+fc <- readRDS('../results/fc.rds')
+```
+
+```{r}
+pdf('../results/fc_ecdf.pdf', width = 12, height = 8)
+par(mfrow = c(1, 2))
+plot(ecdf(fc$log_fc), main = "(a)", xlab = "log(fold change)")
+plot(ecdf(fc$fold_change), main = "(b)", xlab = "fold change")
+dev.off()
+```
 
 ```{r}
 fc %>%

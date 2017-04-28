@@ -78,12 +78,34 @@ def get_ids(wildcards, file_prefix, file_suffix):
     # prefix = '{0}/{1}/exp_{2}/{3}'.format(file_prefix, experiment, num, )
 
 
+# TODO: put this at the beginning of the pipeline (run it before everything)
+FINN_SAMPLES = []
+with open('finn_samples.txt', 'r') as input:
+    for line in input:
+        FINN_SAMPLES.append(line.strip())
+
+
+FINN_NULL_SAMPLES = set()
+with open('finn_null_experiment.txt', 'r') as input:
+    for line in input:
+        for sample in line.split():
+            FINN_NULL_SAMPLES.add(sample)
+print(FINN_NULL_SAMPLES)
+print(len(FINN_NULL_SAMPLES))
 
 rule all:
     input:
         # get all the metadata we need from geuvadis
         'metadata/geu_meta.RData',
         'results/prep_fin.RData',
+
+        # used for null experiment
+        expand('results/finn_samples/{id}/abundance.h5', id = FINN_SAMPLES),
+        expand('results/finn_samples/{id}/hisat.bam', id = FINN_SAMPLES),
+        expand('results/finn_samples/{id}/featureCounts.txt', id = FINN_SAMPLES),
+        expand('results/finn_samples/{id}/cuffquant/abundances.cxb', id = FINN_SAMPLES),
+        expand('results/finn_samples/null/{id}/cuffdiff/isoform_exp.diff', id = range(1, 21)),
+        'results/null_resampling_fdr_report.html',
 
         # isoform_reads[0][0:5],
         # isoform_bam[0:5],
@@ -139,9 +161,39 @@ rule all:
         expand('results/{experiment}/isoform_benchmarks.rds',
             experiment = ['gfr_3_3_20_42_2']),
 
+        expand('results/{experiment}/1/rsem_sleuth.rds',
+            experiment = ['gfr_3_3_20_42_2']),
+
         expand('results/{experiment}/gene_benchmarks.rds',
             experiment = ['gfr_3_3_20_42_2']),
         expand('results/{experiment}/benchmark_report.html',
+            experiment = ['gfr_3_3_20_42_2', 'gcd_3_3_20_1_2',
+            'isoform_3_3_20_1_1']),
+
+        expand('results/{experiment}/benchmark_report_0_variance.html',
+            experiment = ['gfr_3_3_20_42_2', 'gcd_3_3_20_1_2',
+            'isoform_3_3_20_1_1']),
+
+        expand('results/{experiment}/isoform_benchmarks_filter_poisson_variance.rds',
+            experiment = ['gfr_3_3_20_42_2', 'gcd_3_3_20_1_2',
+            'isoform_3_3_20_1_1']),
+
+        expand('results/{experiment}/gene_benchmarks_filter_poisson_variance.rds',
+            experiment = ['gfr_3_3_20_42_2', 'gcd_3_3_20_1_2',
+            'isoform_3_3_20_1_1']),
+
+        expand('results/{experiment}/isoform_benchmarks_filter_smooth_variance.rds',
+            experiment = ['gfr_3_3_20_42_2', 'gcd_3_3_20_1_2',
+            'isoform_3_3_20_1_1']),
+
+        expand('results/{experiment}/gene_benchmarks_filter_smooth_variance.rds',
+            experiment = ['gfr_3_3_20_42_2', 'gcd_3_3_20_1_2',
+            'isoform_3_3_20_1_1']),
+
+        expand('results/{experiment}/txi.rds',
+            experiment = ['gfr_3_3_20_42_2', 'gcd_3_3_20_1_2',
+            'isoform_3_3_20_1_1']),
+        expand('results/{experiment}/benchmark_report_tximport.html',
             experiment = ['gfr_3_3_20_42_2', 'gcd_3_3_20_1_2',
             'isoform_3_3_20_1_1']),
 
@@ -151,7 +203,13 @@ rule all:
             p = range(1, 20 + 1)),
         'results/resampling/resampling_report.html',
 
-        'results/resampling/resampling_figures_merge.html'
+        'results/resampling/resampling_figures_merge.html',
+
+        expand('results/{experiment}/stratify_results.html',
+            experiment = ['isoform_3_3_20_1_1']),
+
+        expand('results/{experiment}/stratified_by_effect.html',
+            experiment = ['gfr_3_3_20_42_2'])
 
 
 rule geuvadis_metadata:
@@ -167,6 +225,169 @@ rule prep_finnish_samples:
         'results/prep_fin.RData'
     shell:
         source_r('R', 'mean_disp_pairs.R')
+
+def finn_sample_input(wildcards):
+    id = wildcards['id']
+    return expand('finn_samples/{id}/{id}_{i}.fastq.gz', id = id, i = [1, 2])
+
+rule finn_samples:
+    input:
+        finn_sample_input
+    output:
+        'results/finn_samples/{id}/abundance.h5'
+    threads: 5
+    shell:
+        '{UPDATED_PATH} '
+        'kallisto quant'
+        ' -i {KALLISTO_INDEX}'
+        ' -b 30'
+        ' -o {output[0]}'
+        ' -t {threads}'
+        ' {input[0]} {input[1]}'
+
+rule finn_hisat_alignment:
+    input:
+        finn_sample_input
+    output:
+        'results/finn_samples/{id}/hisat.bam'
+    threads: 10
+    benchmark:
+        'benchmark/finn_samples/{id}/hisat/benchmark.json'
+    shell:
+        '{UPDATED_PATH}'
+        ' hisat2'
+        ' -x {HISAT_INDEX}'
+        ' -1 {input[0]}'
+        ' -2 {input[1]}'
+        ' --dta-cufflinks'
+        ' -p {threads}'
+        ' | '
+        '{UPDATED_PATH} samtools view -Sb -'
+        ' > '
+        '{output}.unsorted'
+        ' && '
+        '{UPDATED_PATH} samtools sort'
+        ' -o {output}'
+        ' {output}.unsorted'
+        ' && '
+        'rm {output}.unsorted'
+
+rule finn_featureCounts:
+    input:
+        'results/finn_samples/{id}/hisat.bam'
+    output:
+        'results/finn_samples/{id}/featureCounts.txt'
+    benchmark:
+        'benchmark/finn_samples/{id}/featureCounts/benchmark.json'
+    threads: 2
+    shell:
+        '{UPDATED_PATH} '
+        'featureCounts '
+        ' -a {TRANSCRIPTOME_GTF}'
+        ' -o {output}'
+        ' -T {threads}'
+        ' -p'
+        ' {input}'
+
+
+rule finn_cuffquant:
+    input:
+        'results/finn_samples/{id}/hisat.bam',
+        TRANSCRIPTOME_GTF
+    output:
+        'results/finn_samples/{id}/cuffquant/abundances.cxb'
+        # 'sims/{experiment}/exp_{num}/{id}/cuffquant/abundances.cxb'
+    threads: 5
+    benchmark:
+        'benchmark/finn_samples/{id}/cuffquant/benchmark.json'
+    params:
+        output = 'results/finn_samples/{id}/cuffquant/'
+    shell:
+        '{UPDATED_PATH}'
+        ' cuffquant'
+        ' -p {threads}'
+        ' -o {params.output}'
+        ' -b {GENOME_FA}'
+        ' -u'
+        ' -q'
+        ' {TRANSCRIPTOME_GTF}'
+        ' {input[0]}'
+
+FINN_NULL_SAMPLES = []
+with open('finn_null_experiment.txt') as f:
+    for line in f:
+        line = line.split()
+        FINN_NULL_SAMPLES.append(line)
+
+def finn_get_samples(wildcards):
+    id = int(wildcards['id'])
+    id = id - 1
+    samples = FINN_NULL_SAMPLES[id]
+    return samples
+
+def finn_get_cufflinks(wildcards):
+    samples = finn_get_samples(wildcards)
+    return expand('results/finn_samples/{id}/cuffquant/abundances.cxb',
+        id = samples)
+
+rule finn_cuffdiff:
+    input:
+        finn_get_cufflinks
+    output:
+        'results/finn_samples/null/{id}/cuffdiff',
+        'results/finn_samples/null/{id}/cuffdiff/isoform_exp.diff',
+        'results/finn_samples/null/{id}/cuffdiff/gene_exp.diff'
+    benchmark:
+        'benchmark/finn_samples/null/{id}/cuffdiff/benchmark.json'
+    threads: 3
+    run:
+        samples = finn_get_cufflinks(wildcards)
+        left = [samples[i] for i in range(0, 3)]
+        right = [samples[i] for i in range(3, 6)]
+        cmd = ' '.join([UPDATED_PATH,
+            'cuffdiff',
+            '-p', str(threads),
+            '-o', output[0],
+            '-b', GENOME_FA,
+            '-u',
+            '-q',
+            TRANSCRIPTOME_GTF,
+            ','.join(left),
+            ','.join(right)
+            ])
+        print(cmd)
+        shell(cmd)
+
+
+rule null_resampling_isoform:
+    input:
+        expand('results/finn_samples/{id}/abundance.h5', id = FINN_SAMPLES),
+        expand('results/finn_samples/{id}/featureCounts.txt', id = FINN_SAMPLES)
+    output:
+        'results/null_resampling/isoform.rds'
+    threads: 20
+    shell:
+        source_r('R', 'null_resampling_fdr_isoform.R') + ' {threads}'
+
+rule null_resampling_gene:
+    input:
+        expand('results/finn_samples/{id}/abundance.h5', id = FINN_SAMPLES),
+        expand('results/finn_samples/{id}/featureCounts.txt', id = FINN_SAMPLES)
+    output:
+        'results/null_resampling/gene.rds'
+    threads: 20
+    shell:
+        source_r('R', 'null_resampling_fdr_gene.R') + ' {threads}'
+
+rule null_resampling_fdr_report:
+    input:
+        'results/null_resampling/isoform.rds',
+        'results/null_resampling/gene.rds',
+        expand('results/finn_samples/null/{id}/cuffdiff/isoform_exp.diff', id = range(1, 21))
+    output:
+        'results/null_resampling_fdr_report.html'
+    shell:
+        source_rmd('R', 'null_resampling_fdr_report.Rmd', '../results/null_resampling_fdr_report.html')
 
 ###
 # simulation generation
@@ -460,6 +681,36 @@ rule benchmark_gene_filter_lfc:
     shell:
         source_r('R', 'best_filter_gene_lfc.R') + ' {threads} {wildcards.experiment}'
 
+rule benchmark_gene_tximport:
+    input:
+        'results/{experiment}/gene_benchmarks_filter.rds'
+    output:
+        'results/{experiment}/txi.rds'
+    threads: N_SIM
+    shell:
+        source_r('R', 'best_filter_gene_tximport.R') + ' {threads} {wildcards.experiment}'
+
+rule benchmark_report_tximport:
+    input:
+        'results/{experiment}/txi.rds'
+    output:
+        'results/{experiment}/benchmark_report_tximport.html'
+    shell:
+        source_rmd('R', 'benchmark_report_tximport.Rmd',
+            '../results/{wildcards.experiment}/benchmark_report_tximport.html') +
+        ' {threads} {wildcards.experiment}'
+
+rule stratified_by_effect:
+    input:
+        'results/{experiment}/gene_benchmarks_filter_lfc.rds',
+        'results/{experiment}/isoform_benchmarks_filter_lfc.rds'
+    output:
+        'results/{experiment}/stratified_by_effect.html'
+    shell:
+        source_rmd('R', 'stratified_by_effect.Rmd',
+            '../results/{wildcards.experiment}/stratified_by_effect.html') +
+        ' {threads} {wildcards.experiment}'
+
 N_SIM = 20
 def get_isoform_dependencies(wildcards):
     exp = wildcards['experiment']
@@ -498,6 +749,16 @@ rule benchmark_isoform_filter_lfc:
     shell:
         source_r('R', 'best_filter_isoform_lfc.R') + ' {threads} {wildcards.experiment}'
 
+rule benchmark_isoform_rsem:
+    input:
+        'results/{experiment}/isoform_benchmarks_filter_lfc.rds'
+        # 'results/{experiment}/exp_1/BitSeq.rds'
+    output:
+        'results/{experiment}/1/rsem_sleuth.rds'
+    threads: 1
+    shell:
+        source_r('R', 'rsem_sleuth.R') + ' {threads} {wildcards.experiment}'
+
 rule benchmark_report:
     input:
         'results/{experiment}/isoform_benchmarks.rds',
@@ -507,13 +768,96 @@ rule benchmark_report:
         'results/{experiment}/gene_benchmarks_filter.rds',
         'results/{experiment}/gene_benchmarks_filter_lfc.rds'
     output:
-        'results/{experiment}/benchmark_report.html'
+        'results/{experiment}/benchmark_report.html',
+        'results/{experiment}/gene_benchmarks_filter_lfc_clean.rds'
     threads:
         1
     shell:
         source_rmd('R', 'benchmark_report.Rmd',
             '../results/{wildcards.experiment}/benchmark_report.html') +
         ' {threads} {wildcards.experiment}'
+
+rule benchmark_isoform_filter_0_variance:
+    input:
+        'results/{experiment}/isoform_benchmarks_filter_lfc.rds'
+    output:
+        'results/{experiment}/isoform_benchmarks_filter_zero_variance.rds'
+    threads: 20
+    shell:
+        source_r('R', 'best_filter_0_variance_isoform.R') + ' {threads} {wildcards.experiment}'
+
+rule benchmark_isoform_filter_poisson_variance:
+    input:
+        'results/{experiment}/isoform_benchmarks_filter_zero_variance.rds'
+        # 'results/{experiment}/isoform_benchmarks_filter_lfc.rds'
+    output:
+        'results/{experiment}/isoform_benchmarks_filter_poisson_variance.rds'
+    threads: 20
+    shell:
+        source_r('R', 'best_filter_poisson_isoform.R') + ' {threads} {wildcards.experiment}'
+
+rule benchmark_gene_filter_0_variance:
+    input:
+        'results/{experiment}/gene_benchmarks_filter_lfc.rds'
+    output:
+        'results/{experiment}/gene_benchmarks_filter_0_variance.rds'
+    threads: 20
+    shell:
+        source_r('R', 'best_filter_0_variance_gene.R') + ' {threads} {wildcards.experiment}'
+
+
+rule benchmark_gene_filter_poisson_variance:
+    input:
+        'results/{experiment}/gene_benchmarks_filter_0_variance.rds'
+    output:
+        'results/{experiment}/gene_benchmarks_filter_poisson_variance.rds'
+    threads: 20
+    shell:
+        source_r('R', 'best_filter_poisson_gene.R') + ' {threads} {wildcards.experiment}'
+
+rule benchmark_isoform_filter_smooth_variance:
+    input:
+        'results/{experiment}/isoform_benchmarks_filter_poisson_variance.rds'
+    output:
+        'results/{experiment}/isoform_benchmarks_filter_smooth_variance.rds'
+    threads: 20
+    shell:
+        source_r('R', 'best_filter_smooth_isoform.R') + ' {threads} {wildcards.experiment}'
+
+rule benchmark_gene_filter_smooth_variance:
+    input:
+        'results/{experiment}/gene_benchmarks_filter_poisson_variance.rds'
+    output:
+        'results/{experiment}/gene_benchmarks_filter_smooth_variance.rds'
+    threads: 20
+    shell:
+        source_r('R', 'best_filter_smooth_gene.R') + ' {threads} {wildcards.experiment}'
+
+
+
+rule benchmark_report_0_variance:
+    input:
+        'results/{experiment}/isoform_benchmarks_filter_zero_variance.rds',
+        'results/{experiment}/isoform_benchmarks_filter_smooth_variance.rds'
+    output:
+        'results/{experiment}/benchmark_report_0_variance.html'
+    threads: 1
+    shell:
+        source_rmd('R', 'benchmark_report_0_variance.Rmd',
+            '../results/{wildcards.experiment}/benchmark_report_0_variance.html') +
+        ' {threads} {wildcards.experiment}'
+
+rule stratify_results:
+    input:
+        'results/{experiment}/gene_benchmarks_filter_lfc_clean.rds'
+    output:
+        'results/{experiment}/stratify_results.html'
+    threads: 1
+    shell:
+        source_rmd('R', 'stratify_results.Rmd',
+            '../results/{wildcards.experiment}/stratify_results.html') +
+        ' {threads} {wildcards.experiment}'
+
 
 ###
 # compute permutations
@@ -819,7 +1163,7 @@ rule BitSeq_de:
     input:
         'sims/{experiment}/exp_{num}/{id}/BitSeq_cli.rpkm'
     output:
-        'results/{experiment}/exp_{num}/BitSeq.rds'
+        'results/{experiment}/exp_{num}/BitSeq_de.rds'
     benchmark:
         'benchmark/{experiment}/exp_{num}/BitSeq_de.json'
     shell:

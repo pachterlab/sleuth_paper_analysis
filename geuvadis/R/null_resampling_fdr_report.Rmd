@@ -1,0 +1,196 @@
+---
+  title: Null GEUVADIS resampling
+  output:
+    html_document:
+      fig_height: 15
+      fig_width: 10
+---
+
+# transcript level
+## loading data
+
+Take a look at `null_resampling_fdr_isoform.R` to see how this data is generated.
+
+```{r}
+suppressMessages({
+library('ggplot2')
+library('mamabear')
+library('dplyr')
+library('cowplot')
+source('benchmark_methods.R')
+source('gene_common.R')
+})
+```
+
+```{r}
+theme_hp <- function() {
+  theme_cowplot(25) +
+    theme(legend.key.size = unit(2, "lines"), legend.position = 'none')
+}
+
+base_dir <- '../results/final_figures'
+default_extension <- '.pdf'
+source('../../geuvadis/R/gene_common.R')
+```
+
+
+```{r}
+self_benchmark <- readRDS('../results/null_resampling/isoform.rds')
+```
+
+### load Cuffdiff 2
+
+```{r}
+cuffdiff_isoform <- lapply(seq_along(self_benchmark),
+  function(i) {
+    path <- file.path('../results/finn_samples/null', i, 'cuffdiff')
+    res <- get_cuffdiff(path)$isoform
+    res <- dplyr::filter(res, status == 'OK')
+  })
+oracle <- self_benchmark[[1]][[1]]$oracle
+cuffdiff_isoform_benchmark <- lapply(cuffdiff_isoform, function(x) {
+    new_de_benchmark(list(x), 'Cuffdiff 2', oracle)
+  })
+```
+
+
+```{r}
+self_benchmark <- c(self_benchmark, list(cuffdiff_isoform_benchmark))
+```
+
+## creating the plots
+
+### Looking at Type-I error
+
+```{r}
+self_fdr <- lapply(self_benchmark, average_sensitivity_specificity,
+  use_oracle = TRUE, use_fdr = FALSE)
+self_fdr <- dplyr::bind_rows(self_fdr)
+self_fdr <- dplyr::mutate(self_fdr, method = sub('pval_', '', method))
+```
+
+Now let’s make some pretty labels:
+
+```{r}
+self_fdr <- dplyr::mutate(self_fdr,
+  fdr_level_string = paste0('eFDR = ', sprintf('%.2f', fdr_level)))
+```
+
+```{r}
+self_fdr <- dplyr::mutate(self_fdr, type1error = fp / (tp + fp + tn + fn))
+```
+
+```{r}
+p <- ggplot(self_fdr, aes(method, type1error, color = method)) +
+  geom_boxplot() +
+  facet_wrap(~fdr_level_string, ncol = 1) +
+  geom_hline(aes(yintercept = fdr_level), linetype = 2) +
+  ylim(0, 1) +
+  ylab('Type I error') +
+  theme_hp() +
+  geom_jitter() +
+  scale_color_manual(values = method_colors)
+p
+```
+
+```{r}
+filename <- file.path(base_dir, paste0('null_resampling_isoform', default_extension))
+save_plot(filename, p, base_aspect_ratio = 0.75, base_height = 15)
+```
+
+### Looking at absolute false positive
+
+```{r}
+self_fdr <- lapply(self_benchmark, average_sensitivity_specificity,
+  use_oracle = TRUE, use_fdr = TRUE)
+self_fdr <- dplyr::bind_rows(self_fdr)
+self_fdr <- dplyr::mutate(self_fdr, method = sub('pval_', '', method))
+```
+
+Now let’s make some pretty labels:
+
+```{r}
+self_fdr <- dplyr::mutate(self_fdr,
+  fdr_level_string = paste0('eFDR = ', sprintf('%.2f', fdr_level)))
+```
+
+```{r}
+p <- ggplot(self_fdr, aes(method, fp, color = method)) +
+  geom_boxplot(outlier.shape = NA) +
+  facet_wrap(~fdr_level_string, ncol = 1) +
+  # geom_hline(aes(yintercept = fdr_level), linetype = 2) +
+  # ylim(0, 1) +
+  # coord_trans(y = "log2") +
+  scale_y_sqrt() +
+  ylab('number of false positives') +
+  theme_hp() +
+  geom_jitter(height = 0) +
+  scale_color_manual(values = method_colors)
+p
+```
+
+```{r}
+filename <- file.path(base_dir, paste0('null_resampling_isoform_fp', default_extension))
+save_plot(filename, p, base_aspect_ratio = 0.75, base_height = 15)
+```
+
+## looking at genes
+
+```{r}
+self_benchmark <- readRDS('../results/null_resampling/gene.rds')
+```
+
+### load Cuffdiff 2
+
+```{r}
+cuffdiff_gene <- lapply(seq_along(self_benchmark),
+  function(i) {
+    path <- file.path('../results/finn_samples/null', i, 'cuffdiff')
+    res <- get_cuffdiff(path)$gene
+    res <- dplyr::filter(res, status == 'OK')
+  })
+oracle <- self_benchmark[[1]][[1]]$oracle
+cuffdiff_gene_benchmark <- lapply(cuffdiff_gene, function(x) {
+    new_de_benchmark(list(x), 'Cuffdiff 2', oracle)
+  })
+```
+
+```{r}
+self_benchmark <- c(self_benchmark, list(cuffdiff_gene_benchmark))
+```
+
+### Looking at absolute false positive
+
+```{r}
+self_fdr <- lapply(self_benchmark, average_sensitivity_specificity,
+  use_oracle = TRUE, use_fdr = TRUE)
+self_fdr <- dplyr::bind_rows(self_fdr)
+self_fdr <- dplyr::mutate(self_fdr, method = sub('pval_', '', method))
+```
+
+Now let’s make some pretty labels:
+
+```{r}
+self_fdr <- dplyr::mutate(self_fdr,
+  fdr_level_string = paste0('eFDR = ', sprintf('%.2f', fdr_level)))
+```
+
+```{r}
+p <- ggplot(self_fdr, aes(method, fp, color = method)) +
+  geom_boxplot(outlier.shape = NA) +
+  facet_wrap(~fdr_level_string, ncol = 1) +
+  # geom_hline(aes(yintercept = fdr_level), linetype = 2) +
+  # ylim(0, 1) +
+  # coord_trans(y = "log2") +
+  scale_y_sqrt() +
+  ylab('number of false positives') +
+  theme_hp() +
+  geom_jitter(height = 0) +
+  scale_color_manual(values = method_colors)
+p
+```
+
+```{r}
+filename <- file.path(base_dir, paste0('null_resampling_gene_fp', default_extension))
+save_plot(filename, p, base_aspect_ratio = 0.75, base_height = 15)
+```

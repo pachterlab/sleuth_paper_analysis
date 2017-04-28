@@ -1,0 +1,196 @@
+---
+  title: "benchmark report for simulations"
+  output:
+    html_document:
+      fig_height: 20
+      fig_width: 20
+---
+
+# preliminaries
+
+```{r, eval=FALSE}
+sim_name <- 'gfr_3_3_20_42_2'
+sim_name <- 'gcd_3_3_20_1_2'
+sim_name <- 'isoform_3_3_20_1_1'
+```
+
+
+```{r}
+args <- commandArgs(trailingOnly = TRUE)
+if (length(args) != 2) {
+  stop('Usage: RScript N_CPU EXPERIMENT_STRING')
+}
+n_cpu <- args[1]
+sim_name <- args[2]
+```
+
+The simulation string is:
+
+```{r}
+sim_name
+```
+
+We use the variable `simulation_mode` to build different axes depending on the simulation.
+These axes have been tuned by hand.
+
+```{r}
+prefix <- strsplit(sim_name, '_')[[1]][1]
+simulation_mode <- switch(prefix,
+  'isoform' = 'independent',
+  'gcd' = 'common',
+  'gfr' = 'reference',
+  stop(paste0('unrecognized simulation type. Please check the `sim_name`: ',
+    sim_name)
+  ))
+```
+
+The simulation mode is: `R simulation_mode`.
+
+Some more global variables on where to save the figures:
+
+```{r}
+base_dir <- '../results/final_figures'
+default_extension <- '.pdf'
+```
+
+A theme that seems to save well:
+
+```{r}
+theme_hp <- function() {
+  theme_cowplot(25) +
+    theme(legend.key.size = unit(2, "lines"))
+}
+```
+
+## load packages
+
+```{r}
+suppressPackageStartupMessages({
+library('cowplot')
+library('data.table')
+library('dplyr')
+library('mamabear')
+library('parallel')
+})
+source('gene_common.R')
+# options(mc.cores = n_cpu)
+```
+
+set the number of columns for each grid
+
+```{r}
+n_grid_columns <- 2
+```
+
+ignore the following when plotting estimated fdr:
+
+```{r}
+ignore_fdr <- c('GLFC', 'LFC')
+method_colors <- c(method_colors, c(LFC = '#4393c3', GLFC = '#fddbc7',
+  `sleuth (0 tech var)` = 'gray',
+  `sleuth (Poisson tech var)` = 'coral',
+  `sleuth (smooth technical var)` = 'olivedrab'
+  ))
+```
+
+# isoform benchmarks
+
+## fdr/power curves when everyone is using their own filter
+
+```{r}
+each_filter_benchmark <- readRDS(paste0('../results/', sim_name,
+  '/isoform_benchmarks_filter_smooth_variance.rds'))
+  # '/isoform_benchmarks_filter_zero_variance.rds'))
+```
+
+next, let's rename some things for aesthetics
+
+```{r}
+suppressMessages(
+each_filter_benchmark <- lapply(each_filter_benchmark,
+  rename_benchmark,
+  c('Cuffdiff2', 'limmaVoom', 'sleuth_zero_variance', 'sleuth_poisson_variance',
+    'sleuth_smooth_variance'),
+  c('Cuffdiff 2', 'voom', 'sleuth (0 tech var)', 'sleuth (Poisson tech var)',
+    'sleuth (smooth technical var)'), join_mode = 'union')
+)
+```
+
+fixing weirdness that doesn't seem to matter because everyone filters out anyway
+
+```{r}
+if (simulation_mode == 'reference') {
+  eps <- 0.005
+  original_oracle <- lapply(each_filter_benchmark, '[[', 'oracle')
+  original_data <- lapply(each_filter_benchmark,
+    function(benchmark) {
+      benchmark$original_data
+    })
+  efb <- each_filter_benchmark
+  each_filter_benchmark <- lapply(seq_along(original_data),
+    function(i) {
+      cat(paste0('before: ', sum(original_oracle[[i]]$is_de), '\n'))
+      current_oracle <- dplyr::mutate(original_oracle[[i]],
+        is_de = ifelse(is_de & log_fc < eps & -eps < log_fc, FALSE, is_de))
+      cat(paste0('after: ', sum(current_oracle$is_de), '\n'))
+
+      new_de_benchmark(original_data[[i]], names(original_data[[i]]),
+        current_oracle, de_colors = each_filter_benchmark[[i]]$color_mapping, join_mode = 'union')
+    })
+}
+```
+
+because some of the true things will inevitably get filtered, remove the ones we think will be removed from the truth (`sim_filter = TRUE`).
+
+```{r}
+suppressMessages(current_fdr <- get_fdr(each_filter_benchmark, sim_filter = TRUE)$pvals)
+```
+
+Zoom into a relevant area:
+
+```{r}
+tmp <- fdr_efdr_power_plot(current_fdr, start = 100, jump = 100, rank_fdr = 0.10,
+  method_colors = method_colors, fdr_level_position = -0.005,
+  ignore_estimated_fdr = ignore_fdr)
+
+current_limits <- switch(simulation_mode,
+  independent = list(x = c(-0.01, 0.25), y = c(-0.01, 0.28)),
+  common = list(x = c(-0.01, 0.25), y = c(-0.01, 0.20)),
+  reference = list(x = c(-0.01, 0.25), y = c(-0.01, 0.075))
+  )
+
+p <- tmp + theme_hp()
+p <- p + coord_cartesian(xlim = current_limits$x, ylim = current_limits$y,
+  expand = FALSE)
+p
+
+filename <- file.path(base_dir, paste0('0_variance_isoform.each_filter_', sim_name,
+  default_extension))
+save_plot(filename, p, base_aspect_ratio = 1.6, base_height = 15)
+```
+
+```{r}
+tmp <- fdr_efdr_power_plot(current_fdr, start = 500, jump = 500, rank_fdr = 0.10,
+  method_colors = method_colors, fdr_level_position = -0.02,
+  ignore_estimated_fdr = ignore_fdr)
+
+p <- tmp +
+  coord_cartesian(xlim = c(-0.05, 1), ylim = c(-0.05, 1), expand = FALSE) +
+  theme_hp()
+p <- p +
+  geom_polygon(aes(x, y), alpha = 0.20,
+    data = data.frame(
+    x = c(0, 0, current_limits$x[2], current_limits$x[2]),
+    y = c(0, current_limits$y[2], current_limits$y[2], 0)))
+p
+
+filename <- file.path(base_dir, paste0('0_variance_isoform.each_filter_nozoom_', sim_name,
+  default_extension))
+save_plot(filename, p, base_aspect_ratio = 1.6, base_height = 15)
+```
+
+# Session Info
+
+```{r}
+sessionInfo()
+```

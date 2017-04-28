@@ -4,8 +4,9 @@ if (length(args) != 1) {
   stop('Must supply only 1 argument (the number of cores).')
 }
 
+cores <- 20
+
 cores <- args[1]
-# cores <- 20
 
 # This file creates a reference for each method on the complete data set
 # at the GENE level.
@@ -20,6 +21,8 @@ library('parallel')
 options(mc.cores = cores)
 
 # load all of the metadata
+# training_sets <- readRDS('../metadata/training_sets.rds')
+# validation_sets <- readRDS('../metadata/validation_sets.rds')
 source('get_metadata.R')
 
 transcript_gene_mapping <- get_mouse_gene_names()
@@ -71,6 +74,7 @@ dummy_filter <- rep(TRUE, nrow(validation_counts[[1]]))
 names(dummy_filter) <- rownames(validation_counts[[1]])
 dummy_filter_df <- data.frame(target_id = names(dummy_filter),
   stringsAsFactors = FALSE)
+
 ###
 # run the gene methods
 ###

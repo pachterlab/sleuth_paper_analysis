@@ -1,0 +1,188 @@
+---
+  title: "benchmark report for simulations"
+  output:
+    html_document:
+      fig_height: 20
+      fig_width: 20
+---
+
+# preliminaries
+
+```{r, eval=FALSE}
+n_cpu <- 20
+sim_name <- 'gfr_3_3_20_42_2'
+sim_name <- 'gcd_3_3_20_1_2'
+sim_name <- 'isoform_3_3_20_1_1'
+```
+
+
+```{r}
+args <- commandArgs(trailingOnly = TRUE)
+if (length(args) != 2) {
+  stop('Usage: RScript N_CPU EXPERIMENT_STRING')
+}
+n_cpu <- args[1]
+sim_name <- args[2]
+```
+
+The simulation string is:
+
+```{r}
+sim_name
+```
+
+We use the variable `simulation_mode` to build different axes depending on the simulation.
+These axes have been tuned by hand.
+
+```{r}
+prefix <- strsplit(sim_name, '_')[[1]][1]
+simulation_mode <- switch(prefix,
+  'isoform' = 'independent',
+  'gcd' = 'common',
+  'gfr' = 'reference',
+  stop(paste0('unrecognized simulation type. Please check the `sim_name`: ',
+    sim_name)
+  ))
+```
+
+The simulation mode is: `R simulation_mode`.
+
+Some more global variables on where to save the figures:
+
+```{r}
+base_dir <- '../results/final_figures'
+default_extension <- '.pdf'
+```
+
+A theme that seems to save well:
+
+```{r}
+theme_hp <- function() {
+  theme_cowplot(25) +
+    theme(legend.key.size = unit(2, "lines"))
+}
+```
+
+## load packages
+
+```{r}
+suppressPackageStartupMessages({
+library('cowplot')
+library('data.table')
+library('dplyr')
+library('mamabear')
+library('parallel')
+})
+source('gene_common.R')
+source('benchmark_methods.R')
+transcript_gene_mapping <- get_human_gene_names()
+options(mc.cores = n_cpu)
+```
+
+set the number of columns for each grid
+
+```{r}
+n_grid_columns <- 2
+```
+
+ignore the following when plotting estimated fdr:
+
+# gene benchmarks
+
+## fdr/power curves when everyone is using their own filter
+
+```{r}
+each_filter_benchmark <- readRDS(paste0('../results/', sim_name,
+  '/gene_benchmarks_filter.rds'))
+```
+
+```{r}
+txi_each_filter <- readRDS(paste0('../results/', sim_name,
+  '/txi.rds'))
+```
+
+Let's make a new benchmark object with just the ones we want:
+
+```{r}
+to_keep <- c('sleuth', 'edgeR', 'DESeq2', 'limmaVoom')
+
+each_filter_benchmark <- lapply(seq_along(each_filter_benchmark),
+  function(i) {
+    sim_info <- get_de_info(sim_name, i, transcript_gene_mapping)
+
+    original_data <- each_filter_benchmark[[i]]$original_data
+    original_data <- original_data[to_keep]
+    original_data$voom <- original_data$limmaVoom
+    original_data$limmaVoom <- NULL
+    new_data <- c(original_data,
+      list(`DESeq2 (tximport)` = txi_each_filter$DESeq2[[i]]),
+      list(`edgeR (tximport)` = txi_each_filter$edgeR[[i]]),
+      list(`voom (tximport)` = txi_each_filter$voom[[i]]))
+
+    new_de_benchmark(new_data, names(new_data), sim_info$de_genes,
+      join_mode = 'union')
+  })
+```
+
+because some of the true things will inevitably get filtered, remove the ones we think will be removed from the truth (`sim_filter = TRUE`).
+
+```{r}
+suppressMessages(current_fdr <- get_fdr(each_filter_benchmark)$pvals)
+```
+
+```{r}
+method_colors <- method_colors[c('sleuth', 'DESeq2', 'edgeR', 'voom')]
+method_colors <- c(method_colors, `DESeq2 (tximport)` = 'gray',
+  `edgeR (tximport)` = '#c8acbc',
+  `voom (tximport)` = '#e8cc90')
+```
+
+
+Zoom into a relevant area:
+
+```{r}
+tmp <- fdr_efdr_power_plot(current_fdr, start = 100, jump = 100, rank_fdr = 0.10,
+  method_colors = method_colors, fdr_level_position = -0.005)
+
+current_limits <- switch(simulation_mode,
+  independent = list(x = c(-0.01, 0.25), y = c(-0.01, 0.25)),
+  common = list(x = c(-0.01, 0.25), y = c(-0.01, 0.70)),
+  reference = list(x = c(-0.01, 0.25), y = c(-0.01, 0.25))
+  )
+
+p <- tmp + theme_hp()
+p <- p + coord_cartesian(xlim = current_limits$x, ylim = current_limits$y,
+  expand = FALSE)
+p <- p + guides(colour = guide_legend(override.aes = list(size=5)))
+p
+
+filename <- file.path(base_dir, paste0('txi_gene.each_filter_', sim_name,
+  default_extension))
+save_plot(filename, p, base_aspect_ratio = 1.6, base_height = 15)
+```
+
+```{r}
+tmp <- fdr_efdr_power_plot(current_fdr, start = 500, jump = 500, rank_fdr = 0.10,
+  method_colors = method_colors, fdr_level_position = -0.02)
+
+p <- tmp +
+  coord_cartesian(xlim = c(-0.05, 1), ylim = c(-0.05, 1), expand = FALSE) +
+  theme_hp()
+p <- p +
+  geom_polygon(aes(x, y), alpha = 0.20,
+    data = data.frame(
+    x = c(0, 0, current_limits$x[2], current_limits$x[2]),
+    y = c(0, current_limits$y[2], current_limits$y[2], 0)))
+p <- p + guides(colour = guide_legend(override.aes = list(size=5)))
+p
+
+filename <- file.path(base_dir, paste0('txi_gene.each_filter_nozoom_', sim_name,
+  default_extension))
+save_plot(filename, p, base_aspect_ratio = 1.6, base_height = 15)
+```
+
+# Session Info
+
+```{r}
+sessionInfo()
+```

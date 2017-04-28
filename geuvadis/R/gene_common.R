@@ -5,6 +5,15 @@ method_colors <- c('DESeq' = "#56B4E9", 'DESeq2' = "#0072B2",
   voom = '#E69F00',
   sleuth = 'firebrick1')
 
+method_colors <- c(DESeq = '#b2182b',
+DESeq2 = '#2166ac',
+`Cuffdiff 2` = '#d6604d',
+EBSeq = '#f4a582',
+edgeR = '#92c5de',
+voom = '#E69F00',
+sleuth = '#000000'
+)
+
 method_colors_old <- c('DESeq' = "#56B4E9", 'DESeq2' = "#0072B2",
   `Cuffdiff2` = '#009E73', EBSeq = '#D55E00', edgeR = '#CC79A7',
   limmaVoom = '#E69F00',

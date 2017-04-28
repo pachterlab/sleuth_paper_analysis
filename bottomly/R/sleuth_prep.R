@@ -63,7 +63,7 @@ dgel <- DGEList(obs_raw)
 
 # Section 2.6 in edgeR vignette
 # https://www.bioconductor.org/packages/3.3/bioc/vignettes/edgeR/inst/doc/edgeRUsersGuide.pdf
-keep <- rowSums(cpm(dgel) > 1) >= 2
+keep <- rowSums(cpm(dgel) > 1) >= 11
 dgel <- dgel[keep, , keep.lib.sizes=FALSE]
 
 dgel <- calcNormFactors(dgel)
@@ -82,7 +82,7 @@ voom_significant <- dplyr::filter(voom_result, qval <= 0.05)
 DESeq2_voom <- intersect(DESeq2_significant$target_id,
   voom_significant$target_id)
 
-target_set <- data.frame(target_id = setdiff(sleuth_null$target_id, DESeq2_voom))
+target_set <- data.frame(target_id = intersect(sleuth_null$target_id, DESeq2_voom))
 
 target_set <- dplyr::inner_join(sleuth_table, target_set, by = 'target_id')
 
@@ -97,3 +97,27 @@ kt <- dplyr::inner_join(kt, head(dplyr::select(target_set, target_id), 20),
 ggplot(kt, aes(sample, est_counts)) +
   geom_point(aes(color = strain)) +
   facet_wrap(~target_id)
+
+tmp <- lapply(target_set$target_id[1:6],
+  function(x) {
+    plot_bootstrap(so, x, color_by = 'strain')
+  })
+plot_grid(plotlist = tmp)
+
+which_transcript <- target_set$target_id[6]
+
+dplyr::filter(sleuth_table, target_id == which_transcript)
+dplyr::filter(voom_result, target_id == which_transcript)
+dplyr::filter(DESeq2_result, target_id == which_transcript)
+
+p <- plot_bootstrap(so, which_transcript, color_by = 'strain')
+
+save_plot('../results/significant_plot.pdf', p)
+
+tmp <- lapply(target_set$target_id[7:12],
+  function(x) {
+    plot_bootstrap(so, x, color_by = 'strain')
+  })
+plot_grid(plotlist = tmp)
+
+sleuth_live(so)

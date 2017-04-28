@@ -72,6 +72,12 @@ p
 ```
 
 ```{r}
+write.csv(p$data,
+  file.path(base_dir, 'isoform_resampling_merged.csv'),
+  row.names = FALSE)
+```
+
+```{r}
 filename <- file.path(base_dir, paste0('isoform_resampling_merged', default_extension))
 save_plot(filename, p, base_aspect_ratio = 0.75, base_height = 20)
 ```
@@ -111,6 +117,11 @@ p <- ggplot(self_fdr, aes(method_label, true_fdr, color = method,
 p
 ```
 
+```{r}
+write.csv(p$data,
+  file.path(base_dir, 'gene_resampling_merged.csv'),
+  row.names = FALSE)
+```
 ```{r}
 filename <- file.path(base_dir, paste0('gene_resampling_merged', default_extension))
 save_plot(filename, p, base_aspect_ratio = 0.75, base_height = 20)

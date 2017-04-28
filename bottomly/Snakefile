@@ -69,7 +69,7 @@ rule all:
         'R/fdr.html',
         'R/var_plots.html'
 
-        # 'R/isoform_benchmarks.html',
+        # 'R/isoform_benchmarks.html'
         # 'R/auc.html'
 
 

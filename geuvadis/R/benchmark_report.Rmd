@@ -87,7 +87,8 @@ ignore the following when plotting estimated fdr:
 
 ```{r}
 ignore_fdr <- c('GLFC', 'LFC')
-method_colors_lfc <- c(method_colors, c(LFC = 'black', GLFC = 'dimgray'))
+# method_colors_lfc <- c(method_colors, c(LFC = 'black', GLFC = 'dimgray'))
+method_colors_lfc <- c(method_colors, c(LFC = '#4393c3', GLFC = '#fddbc7'))
 ```
 
 # isoform benchmarks
@@ -111,6 +112,53 @@ each_filter_benchmark <- lapply(each_filter_benchmark,
 )
 ```
 
+```{r}
+if (simulation_mode == 'reference') {
+  eps <- 0.005
+  original_oracle <- lapply(each_filter_benchmark, '[[', 'oracle')
+  original_data <- lapply(each_filter_benchmark,
+    function(benchmark) {
+      benchmark$original_data
+    })
+
+
+  each_filter_benchmark <- lapply(seq_along(original_data),
+    function(i) {
+      cat(paste0('before: ', sum(original_oracle[[i]]$is_de), '\n'))
+      current_oracle <- dplyr::mutate(original_oracle[[i]],
+        is_de = ifelse(is_de & log_fc < eps & -eps < log_fc, FALSE, is_de))
+      cat(paste0('after: ', sum(current_oracle$is_de), '\n'))
+
+      new_de_benchmark(original_data[[i]], names(original_data[[i]]),
+        current_oracle, de_colors = method_colors_lfc, join_mode = 'union')
+    })
+}
+
+testing <- readRDS(paste0('../results/', sim_name, '/isoform_benchmarks_filter_lfc_clean.rds'))
+
+all.equal(each_filter_benchmark[[1]]$all_data, testing[[1]]$all_data)
+
+# stratified_benchmark <- lapply(seq_along(stratified_results),
+#   function(i) {
+#     # i refers to the strata
+#     results <- stratified_results[[i]]
+#     lapply(seq_along(results), function(j) {
+#       # j refers to the jth list of results
+#       res <- results[[j]]
+#       new_de_benchmark(res, names(res), stratified_oracle[[i]][[j]],
+#         de_colors = method_colors_lfc, join_mode = 'union')
+#     })
+#   })
+suppressMessages(test_fdr <- get_fdr(testing, sim_filter = TRUE)$pvals)
+```
+
+save the renamed version for other analyses.
+
+```{r}
+saveRDS(each_filter_benchmark, paste0('../results/', sim_name,
+  '/isoform_benchmarks_filter_lfc_clean.rds'))
+```
+
 because some of the true things will inevitably get filtered, remove the ones we think will be removed from the truth (`sim_filter = TRUE`).
 
 ```{r}
@@ -120,20 +168,56 @@ suppressMessages(current_fdr <- get_fdr(each_filter_benchmark, sim_filter = TRUE
 Zoom into a relevant area:
 
 ```{r}
+#  "#E69F00",
+#
+# "#009E73"
+# temporary_method_colors <- c('#b2182b',
+# '#d6604d',
+# '#f4a582',
+# '#fddbc7',
+# '#d1e5f0',
+# '#92c5de',
+# '#000000',
+# '#4393c3',
+# '#2166ac')
+
+temporary_method_colors <- c('#b2182b',
+'#2166ac',
+'#d6604d',
+'#f4a582',
+'#92c5de',
+'#E69F00',
+'#000000',
+'#4393c3',
+'#fddbc7'
+)
+names(temporary_method_colors) <- names(method_colors_lfc)
+
 tmp <- fdr_efdr_power_plot(current_fdr, start = 100, jump = 100, rank_fdr = 0.10,
   method_colors = method_colors_lfc, fdr_level_position = -0.005,
+  # method_colors = method_colors_lfc, fdr_level_position = -0.005,
   ignore_estimated_fdr = ignore_fdr)
 
 current_limits <- switch(simulation_mode,
-  independent = list(x = c(-0.01, 0.25), y = c(-0.01, 0.28)),
-  common = list(x = c(-0.01, 0.25), y = c(-0.01, 0.20)),
-  reference = list(x = c(-0.01, 0.25), y = c(-0.01, 0.075))
+  independent = list(x = c(-0.01, 0.25), y = c(-0.01, 0.28),
+    x_label = 0.035, y_label = 0.27),
+  common = list(x = c(-0.01, 0.25), y = c(-0.01, 0.20),
+    x_label = 0.035, y_label = 0.19),
+  reference = list(x = c(-0.01, 0.25), y = c(-0.01, 0.075),
+    x_label = 0.02, y_label = 0.072)
   )
 
 p <- tmp + theme_hp()
 p <- p + coord_cartesian(xlim = current_limits$x, ylim = current_limits$y,
   expand = FALSE)
+p <- p + guides(colour = guide_legend(override.aes = list(size=5)))
+p <- p + annotate("text", x = current_limits$x_label, y = current_limits$y_label,
+  color = '#999999', size = 7, label = "Number of transcripts DE")
 p
+
+write.csv(p$data,
+  file.path(base_dir, paste0('isoform.each_filter_', sim_name, '.csv')),
+  row.names = FALSE)
 
 filename <- file.path(base_dir, paste0('isoform.each_filter_', sim_name,
   default_extension))
@@ -148,11 +232,14 @@ tmp <- fdr_efdr_power_plot(current_fdr, start = 500, jump = 500, rank_fdr = 0.10
 p <- tmp +
   coord_cartesian(xlim = c(-0.05, 1), ylim = c(-0.05, 1), expand = FALSE) +
   theme_hp()
+p <- p + guides(colour = guide_legend(override.aes = list(size=5)))
 p <- p +
   geom_polygon(aes(x, y), alpha = 0.20,
     data = data.frame(
     x = c(0, 0, current_limits$x[2], current_limits$x[2]),
     y = c(0, current_limits$y[2], current_limits$y[2], 0)))
+p <- p + annotate("text", x = 0.14, y = 0.96,
+  color = '#999999', size = 7, label = "Number of transcripts DE")
 p
 
 filename <- file.path(base_dir, paste0('isoform.each_filter_nozoom_', sim_name,
@@ -182,6 +269,27 @@ subset_benchmarks <- lapply(all_benchmarks,
         filter_benchmark(bench, to_remove, join_mode = 'intersect')
       })
   })
+```
+
+```{r}
+if (simulation_mode == 'reference') {
+  sb <- lapply(subset_benchmarks,
+    function(bench_list) {
+      lapply(bench_list,
+        function(bench) {
+          current_oracle <- bench$oracle
+          cat(paste0('before: ', sum(current_oracle$is_de), '\n'))
+          current_oracle <- dplyr::mutate(current_oracle,
+            is_de = ifelse(is_de & log_fc < eps & -eps < log_fc, FALSE, is_de))
+          cat(paste0('after: ', sum(current_oracle$is_de), '\n'))
+
+          new_de_benchmark(bench$original_data, bench$labels, current_oracle,
+            de_colors = bench$color_mapping,
+            join_mode = 'intersect')
+        })
+    })
+  subset_benchmarks <- sb
+}
 ```
 
 Generate all of the FDR versus number of differentially expressed genes
@@ -402,6 +510,8 @@ each_filter_benchmark <- lapply(each_filter_benchmark,
   c('Cuffdiff2', 'limmaVoom'),
   c('Cuffdiff 2', 'voom'), join_mode = 'union')
 )
+saveRDS(each_filter_benchmark, paste0('../results/', sim_name,
+  '/gene_benchmarks_filter_lfc_clean.rds'))
 ```
 
 ```{r}
@@ -416,15 +526,25 @@ tmp <- fdr_efdr_power_plot(current_fdr, start = 100, jump = 100, rank_fdr = 0.10
   ignore_estimated_fdr = ignore_fdr)
 
 current_limits <- switch(simulation_mode,
-  independent = list(x = c(-0.01, 0.25), y = c(-0.01, 0.25)),
-  common = list(x = c(-0.01, 0.25), y = c(-0.01, 0.70)),
-  reference = list(x = c(-0.01, 0.25), y = c(-0.01, 0.25))
+  independent = list(x = c(-0.01, 0.25), y = c(-0.01, 0.25),
+    x_label = 0.032, y_label = 0.22),
+  common = list(x = c(-0.01, 0.25), y = c(-0.01, 0.70),
+    x_label = 0.032, y_label = 0.61),
+  reference = list(x = c(-0.01, 0.25), y = c(-0.01, 0.25),
+    x_label = 0.032, y_label = 0.22)
   )
 
 p <- tmp + theme_hp()
 p <- p + coord_cartesian(xlim = current_limits$x, ylim = current_limits$y,
   expand = FALSE)
+p <- p + annotate("text", x = current_limits$x_label, y = current_limits$y_label,
+  color = '#999999', size = 7, label = "Number of genes DE")
+p <- p + guides(colour = guide_legend(override.aes = list(size=5)))
 p
+
+write.csv(p$data,
+  file.path(base_dir, paste0('gene.each_filter_', sim_name, '.csv')),
+  row.names = FALSE)
 
 filename <- file.path(base_dir, paste0('gene.each_filter_', sim_name,
   default_extension))
@@ -444,6 +564,10 @@ p <- p +
     data = data.frame(
     x = c(0, 0, current_limits$x[2], current_limits$x[2]),
     y = c(0, current_limits$y[2], current_limits$y[2], 0)))
+p <- p + annotate("text", x = 0.14, y = 0.96,
+  color = '#999999', size = 7, label = "Number of genes DE")
+p <- p + guides(colour = guide_legend(override.aes = list(size=5)))
+
 p
 
 filename <- file.path(base_dir, paste0('gene.each_filter_nozoom_', sim_name,

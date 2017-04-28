@@ -1,0 +1,295 @@
+---
+  title: "stratifying results based on isoform complexity"
+  output:
+    html_document:
+      fig_height: 20
+      fig_width: 20
+---
+
+# preliminaries
+
+```{r, eval=FALSE}
+n_cpu <- 20
+sim_name <- 'gfr_3_3_20_42_2'
+sim_name <- 'gcd_3_3_20_1_2'
+sim_name <- 'isoform_3_3_20_1_1'
+```
+
+
+```{r}
+args <- commandArgs(trailingOnly = TRUE)
+if (length(args) != 2) {
+  stop('Usage: RScript N_CPU EXPERIMENT_STRING')
+}
+n_cpu <- args[1]
+sim_name <- args[2]
+```
+
+The simulation string is:
+
+```{r}
+sim_name
+```
+
+We use the variable `simulation_mode` to build different axes depending on the simulation.
+These axes have been tuned by hand.
+
+```{r}
+prefix <- strsplit(sim_name, '_')[[1]][1]
+simulation_mode <- switch(prefix,
+  'isoform' = 'independent',
+  'gcd' = 'common',
+  'gfr' = 'reference',
+  stop(paste0('unrecognized simulation type. Please check the `sim_name`: ',
+    sim_name)
+  ))
+```
+
+The simulation mode is: `R simulation_mode`.
+
+Some more global variables on where to save the figures:
+
+```{r}
+base_dir <- '../results/final_figures'
+default_extension <- '.pdf'
+```
+
+A theme that seems to save well:
+
+```{r}
+theme_hp <- function() {
+  theme_cowplot(25) +
+    theme(legend.key.size = unit(2, "lines"))
+}
+```
+
+## load packages
+
+```{r}
+suppressPackageStartupMessages({
+library('cowplot')
+library('data.table')
+library('dplyr')
+library('mamabear')
+library('parallel')
+})
+source('gene_common.R')
+source('benchmark_methods.R')
+options(mc.cores = n_cpu)
+```
+
+set the number of columns for each grid
+
+```{r}
+n_grid_columns <- 2
+```
+
+ignore the following when plotting estimated fdr:
+
+```{r}
+ignore_fdr <- c('GLFC', 'LFC')
+# method_colors_lfc <- c(method_colors, c(LFC = 'black', GLFC = 'dimgray'))
+method_colors_lfc <- c(method_colors, c(LFC = '#4393c3', GLFC = '#fddbc7'))
+```
+
+# isoform benchmarks
+
+first, extract all of the original data
+
+```{r}
+each_filter_benchmark <- readRDS(paste0('../results/', sim_name,
+  '/isoform_benchmarks_filter_lfc_clean.rds'))
+```
+
+```{r}
+original_data <- lapply(each_filter_benchmark,
+  function(benchmark) {
+    benchmark$original_data
+  })
+```
+
+Next, let's break them into different categories and stratify them.
+
+```{r}
+transcript_gene_mapping <- get_human_gene_names()
+```
+
+```{r}
+original_oracle <- lapply(each_filter_benchmark, '[[', 'oracle')
+```
+
+Let's look at the effect sizes.
+
+```{r}
+eps <- 0.005
+sapply(original_oracle,
+  function(x) {
+    nrow(dplyr::filter(x, is_de & log_fc < eps & -eps < log_fc))
+  })
+
+new_oracle <- lapply(original_oracle,
+  function(x) {
+    dplyr::mutate(x,
+      is_de = ifelse(is_de & log_fc < eps & -eps < log_fc, FALSE, is_de))
+    })
+```
+
+
+```{r}
+fdr_precision <- function(cutoff, by_abs = TRUE) {
+  oracle_cut_off <- lapply(new_oracle,
+    function(x) {
+      tmp <- NULL
+      if (by_abs) {
+        tmp <- dplyr::filter(x, is_de) %>%
+          dplyr::mutate(which_class = (log_fc) >= cutoff)
+      } else {
+        tmp <- dplyr::filter(x, is_de) %>%
+          dplyr::mutate(quant = ecdf(abs(log_fc))(abs(log_fc)),
+            which_class = quant >= cutoff)
+      }
+      tmp <- bind_rows(tmp, dplyr::filter(x, !is_de))
+      tmp <- dplyr::mutate(tmp, which_class = ifelse(is.na(which_class), FALSE, which_class))
+      tmp
+    })
+
+  benchmark_cut_off <- lapply(seq_along(each_filter_benchmark),
+    function(i) {
+      dplyr::left_join(each_filter_benchmark[[i]]$m_pval,
+        dplyr::select(oracle_cut_off[[i]], target_id, which_class),
+        by = 'target_id')
+    })
+
+  quant_sensitivity <- lapply(benchmark_cut_off,
+    function(cur) {
+      # cur <- cur$m_qval
+      # print(cur)
+      dplyr::arrange(cur, estimate) %>%
+      dplyr::group_by(method) %>%
+      dplyr::mutate(tp = cumsum(which_class & is_de), fp_all = cumsum(!is_de),
+        p = sum(which_class & is_de), tp_all = cumsum(is_de)) %>%
+      dplyr::mutate(
+        sensitivity = tp / p,
+        fdr_all = fp_all / (fp_all + tp_all),
+        n_de = 1:length(estimate))
+  })
+}
+
+fdr_prec <- fdr_precision(log(2))
+dplyr::summarize(fdr_prec[[1]], sum(which_class))
+
+fdr_prec_2 <- fdr_prec
+fdr_prec_2 <- lapply(seq_along(fdr_prec_2), function(i) dplyr::mutate(fdr_prec_2[[i]], sample = i))
+fdr_prec_2 <- dplyr::bind_rows(fdr_prec_2)
+
+fdr_prec_2 <- dplyr::group_by(fdr_prec_2, method, n_de)
+tmp <- dplyr::summarize(fdr_prec_2, fdr_all = mean(fdr_all), sensitivity = mean(sensitivity))
+tmp <- dplyr::ungroup(tmp)
+tmp <- dplyr::mutate(tmp, method = substr(method, 6, 1000L))
+
+p <- ggplot(tmp, aes(fdr_all, sensitivity, color = method)) +
+  geom_path(size = 1.2, alpha = 0.8) +
+  geom_text(aes(fdr_all, sensitivity, label = n_de), data = dplyr::filter(tmp, (n_de %% 100) == 0), size = 8) +
+  theme_hp() +
+  xlim(0, 0.25) +
+  ylim(0, 0.15) +
+  scale_color_manual(values = method_colors_lfc) +
+  xlab("false discovery rate") +
+  ylab("filtered sensitivity")
+
+filename <- file.path(base_dir, paste0('isoform.by_effect', sim_name,
+  default_extension))
+save_plot(filename, p, base_aspect_ratio = 1.6, base_height = 15)
+```
+
+
+# gene level
+
+
+
+```{r}
+each_filter_benchmark <- readRDS(paste0('../results/', sim_name,
+  '/gene_benchmarks_filter_lfc_clean.rds'))
+```
+
+```{r}
+original_data <- lapply(each_filter_benchmark,
+  function(benchmark) {
+    benchmark$original_data
+  })
+```
+
+```{r}
+fdr_precision_gene <- function(cutoff, by_abs = TRUE) {
+  oracle_cut_off <- lapply(seq_along(new_oracle),
+    function(i) {
+      x <- new_oracle[[i]]
+      tmp <- NULL
+      if (by_abs) {
+        tmp <- dplyr::filter(x, is_de) %>%
+          dplyr::mutate(which_class = (log_fc) >= cutoff)
+      } else {
+        tmp <- dplyr::filter(x, is_de) %>%
+          dplyr::mutate(quant = ecdf(abs(log_fc))(abs(log_fc)),
+            which_class = quant >= cutoff)
+      }
+      tmp <- bind_rows(tmp, dplyr::filter(x, !is_de))
+      tmp <- dplyr::mutate(tmp, which_class = ifelse(is.na(which_class), FALSE, which_class))
+      tmp <- dplyr::group_by(tmp, ens_gene)
+      tmp <- dplyr::summarize(tmp, which_class = any(which_class))
+      tmp <- dplyr::left_join(each_filter_benchmark[[i]]$oracle,
+        dplyr::select(tmp, target_id = ens_gene, which_class))
+      tmp
+    })
+
+  benchmark_cut_off <- lapply(seq_along(each_filter_benchmark),
+    function(i) {
+      dplyr::left_join(each_filter_benchmark[[i]]$m_pval,
+        dplyr::select(oracle_cut_off[[i]], target_id, which_class),
+        by = 'target_id')
+    })
+
+  quant_sensitivity <- lapply(benchmark_cut_off,
+    function(cur) {
+      # cur <- cur$m_qval
+      # print(cur)
+      dplyr::arrange(cur, estimate) %>%
+      dplyr::group_by(method) %>%
+      dplyr::mutate(tp = cumsum(which_class & is_de), fp_all = cumsum(!is_de),
+        p = sum(which_class & is_de), tp_all = cumsum(is_de)) %>%
+      dplyr::mutate(
+        sensitivity = tp / p,
+        fdr_all = fp_all / (fp_all + tp_all),
+        n_de = 1:length(estimate))
+  })
+}
+```
+
+```{r}
+fdr_prec <- fdr_precision_gene(log(2))
+
+
+fdr_prec_2 <- fdr_prec
+fdr_prec_2 <- lapply(seq_along(fdr_prec_2), function(i) dplyr::mutate(fdr_prec_2[[i]], sample = i))
+fdr_prec_2 <- dplyr::bind_rows(fdr_prec_2)
+
+fdr_prec_2 <- dplyr::group_by(fdr_prec_2, method, n_de)
+tmp <- dplyr::summarize(fdr_prec_2, fdr_all = mean(fdr_all), sensitivity = mean(sensitivity))
+tmp <- dplyr::ungroup(tmp)
+tmp <- dplyr::mutate(tmp, method = substr(method, 6, 1000L))
+
+p <- ggplot(tmp, aes(fdr_all, sensitivity, color = method)) +
+  geom_path(size = 1.2, alpha = 0.8) +
+  geom_text(aes(fdr_all, sensitivity, label = n_de), data = dplyr::filter(tmp, (n_de %% 100) == 0), size = 8) +
+  theme_hp() +
+  xlim(0, 0.25) +
+  ylim(0, 0.2) +
+  scale_color_manual(values = method_colors_lfc) +
+  xlab("false discovery rate") +
+  ylab("filtered sensitivity")
+p
+
+filename <- file.path(base_dir, paste0('gene.by_effect', sim_name,
+  default_extension))
+save_plot(filename, p, base_aspect_ratio = 1.6, base_height = 15)
+```

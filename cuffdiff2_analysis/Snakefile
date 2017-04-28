@@ -23,7 +23,9 @@ rule all:
         expand('results/paired/{id}/kallisto/abundance.h5', id = SRA_PAIRED),
         expand('results/paired/{id}/featureCounts.txt', id = SRA_PAIRED),
 
-        'results/fc.rds'
+        'results/fc.rds',
+
+        'results/investigating_variance.html'
 
 rule metadata:
     output:
@@ -130,3 +132,9 @@ rule generate_fold_changes:
         'R/fc.html'
     shell:
         source_rmd('R', 'fc.Rmd')
+
+rule investigating_variance:
+    output:
+        'results/investigating_variance.html'
+    shell:
+        source_rmd('R', 'investigating_variance.Rmd')

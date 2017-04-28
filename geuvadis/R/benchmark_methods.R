@@ -68,7 +68,7 @@ sleuth_filter <- function(mat, ...) {
 }
 
 edgeR_filter <- function(mat, ...) {
-  rowSums(cpm(mat) > 1) >= 2
+  rowSums(cpm(mat) > 1) >= 3
 }
 
 DESeq2_filter <- function(mat, ...) {
@@ -342,13 +342,14 @@ load_gene_results_intersect <- function(
 ###
 # these functions are used for the isoform level analysis
 ###
-limma_filter_and_run <- function(count_matrix, stc, sleuth_filter) {
-  which_targets <- DESeq2_filter(count_matrix)
-  sleuth_filter <- sleuth_filter & which_targets
-  cds <- make_count_data_set(count_matrix[sleuth_filter, ], stc)
+limma_filter_and_run <- function(counts, stc, match_filter) {
+  which_targets <- DESeq2_filter(counts)
+  match_filter <- match_filter & which_targets
+  cds <- make_count_data_set(counts[match_filter, ], stc)
+
   res <- runVoom(cds, FALSE, FALSE)
-  sleuth_filter <- names(which(sleuth_filter))
-  list(result = res, filter = sleuth_filter)
+  match_filter <- names(which(match_filter))
+  list(result = res, filter = match_filter)
 }
 
 # DEPRECATED
@@ -366,17 +367,25 @@ limma_filter_and_run <- function(count_matrix, stc, sleuth_filter) {
 #   list(result = res, filter = sleuth_filter)
 # }
 
-DESeq2_filter_and_run_intersect <- function(count_matrix, stc, sleuth_filter) { # nolint
-  count_matrix <- round(count_matrix)
-  mode(count_matrix) <- 'integer'
-  which_targets <- DESeq2_filter(count_matrix)
-  sleuth_filter <- sleuth_filter & which_targets
-  cds <- make_count_data_set(count_matrix[sleuth_filter, ], stc)
-  res <- runDESeq2(cds, FALSE, FALSE)
+DESeq2_filter_and_run_intersect <- function(counts, stc, match_filter, # nolint
+  is_counts = TRUE) {
+  if (is_counts) {
+    counts <- round(counts)
+    mode(counts) <- 'integer'
+    which_targets <- DESeq2_filter(counts)
+    match_filter <- match_filter & which_targets
+    cds <- make_count_data_set(counts[match_filter, ], stc)
+  } else {
+    cds <- DESeqDataSetFromTximport(counts, stc, ~condition)
+    which_targets <- DESeq2_filter(counts(cds))
+    match_filter <- match_filter & which_targets
+    cds <- cds[match_filter, ]
+  }
+  res <- runDESeq2(cds, FALSE, FALSE, is_counts)
 
-  sleuth_filter <- names(which(sleuth_filter))
+  match_filter <- names(which(match_filter))
 
-  list(result = res, filter = sleuth_filter)
+  list(result = res, filter = match_filter)
 }
 
 DESeq_filter_and_run <- function(count_matrix, stc, sleuth_filter) { # nolint
@@ -392,18 +401,38 @@ DESeq_filter_and_run <- function(count_matrix, stc, sleuth_filter) { # nolint
   list(result = res, filter = sleuth_filter)
 }
 
-edgeR_filter_and_run <- function(count_matrix, stc, sleuth_filter) {
-  count_matrix <- round(count_matrix)
-  mode(count_matrix) <- 'integer'
-  which_targets <- edgeR_filter(count_matrix)
-  sleuth_filter <- sleuth_filter & which_targets
+edgeR_filter_and_run <- function(counts, stc, match_filter, is_counts = TRUE) {
+  if (is_counts) {
+    counts <- round(counts)
+    mode(counts) <- 'integer'
+    which_targets <- edgeR_filter(counts)
+    match_filter <- match_filter & which_targets
+    cds <- make_count_data_set(counts[match_filter, ], stc)
+    design <- NULL
+  } else {
+    txi <- counts
+    # below boilerplate taken from tximport vignette and modified to include filtering
+    cts <- txi$counts
+    which_targets <- edgeR_filter(cts)
+    match_filter <- match_filter & which_targets
 
-  cds <- make_count_data_set(count_matrix[sleuth_filter, ], stc)
-  res <- runEdgeR(cds, FALSE, FALSE)
+    cts <- cts[match_filter, ]
+    normMat <- txi$length[match_filter, ]
+    normMat <- normMat/exp(rowMeans(log(normMat)))
+    o <- log(calcNormFactors(cts/normMat)) + log(colSums(cts/normMat))
 
-  sleuth_filter <- names(which(sleuth_filter))
+    y <- DGEList(cts)
+    y$offset <- t(t(log(normMat)) + o)
+    cds <- y
+    # y is now ready for estimate dispersion functions see edgeR User's Guide
+    design <- model.matrix(~condition, stc)
+    colnames(design)[2] <- "pData(e)$conditionB"
+  }
+  res <- runEdgeR(cds, FALSE, FALSE, is_counts, design)
 
-  list(result = res, filter = sleuth_filter)
+  match_filter <- names(which(match_filter))
+
+  list(result = res, filter = match_filter)
 }
 
 lfc_filter_and_run <- function(count_matrix, stc, sleuth_filter) {
@@ -609,13 +638,17 @@ make_count_data_set <- function(counts, sample_info) {
 }
 
 run_sleuth_prep <- function(sample_info, max_bootstrap = 30,
-  filter_target_id = NULL, gene_mode = NULL,
+  filter_target_id = NULL, gene_mode = NULL, zero_technical_variance = FALSE,
+  poisson_technical_variance = FALSE,
   ...) {
   so <- sleuth_prep(sample_info, ~ condition, max_bootstrap = max_bootstrap,
     target_mapping = transcript_gene_mapping,
     filter_target_id = filter_target_id,
     gene_mode = gene_mode,
-    norm_by_length = TRUE,
+    norm_by_abundance = TRUE,
+    # norm_by_length = TRUE,
+    zero_technical_variance = zero_technical_variance,
+    poisson_technical_variance = poisson_technical_variance,
     ...)
   so <- sleuth_fit(so)
 
@@ -628,19 +661,28 @@ run_sleuth <- function(sample_info,
   gene_mode = NULL,
   gene_column = NULL,
   filter_target_id = NULL,
+  zero_technical_variance = FALSE,
+  poisson_technical_variance = FALSE,
+  which_bio_var = 'smooth_sigma_sq_pmax',
   ...) {
 
   so <- NULL
   if (!is.null(gene_column)) {
     so <- run_sleuth_prep(sample_info, max_bootstrap = max_bootstrap,
-      filter_target_id = filter_target_id, gene_mode = gene_column, ...)
+      filter_target_id = filter_target_id, gene_mode = gene_column,
+      zero_technical_variance = zero_technical_variance,
+      poisson_technical_variance = poisson_technical_variance,
+      ...)
   } else {
   so <- run_sleuth_prep(sample_info, max_bootstrap = max_bootstrap,
-    filter_target_id = filter_target_id, ...)
+    filter_target_id = filter_target_id,
+    zero_technical_variance = zero_technical_variance,
+    poisson_technical_variance = poisson_technical_variance,
+    ...)
   }
   so <- sleuth_wt(so, 'conditionB')
   so <- sleuth_fit(so, ~ 1, 'reduced')
-  so <- sleuth_lrt(so, 'reduced', 'full')
+  so <- sleuth_lrt(so, 'reduced', 'full', which_bio_var = which_bio_var)
 
   res <- NULL
   if (is.null(gene_mode)) {
@@ -777,8 +819,15 @@ EBSeq_isoform <- function(e, as_gene = TRUE, method_filtering = FALSE) {
 
 # The code below is a slightly modified version of the code from `DESeq2paper`
 # http://www-huber.embl.de/DESeq2paper/
-runDESeq2 <- function(e, as_gene = TRUE, compute_filter = FALSE) {
-  dds <- DESeqDataSetFromMatrix(exprs(e), DataFrame(pData(e)), ~ condition)
+runDESeq2 <- function(e, as_gene = TRUE, compute_filter = FALSE, is_counts = TRUE) {
+
+  dds <- NULL
+  if (is_counts) {
+    dds <- DESeqDataSetFromMatrix(exprs(e), DataFrame(pData(e)), ~ condition)
+  } else {
+    dds <- e
+  }
+
   if (compute_filter) {
     # Section 1.3.6 in DESeq2 vignette
     # https://www.bioconductor.org/packages/3.3/bioc/vignettes/DESeq2/inst/doc/DESeq2.pdf
@@ -826,9 +875,13 @@ runDESeq <- function(e, as_gene = TRUE, compute_filter = FALSE) {
 }
 
 
-runEdgeR <- function(e, as_gene = TRUE, compute_filter = FALSE) {
-  design <- model.matrix(~ pData(e)$condition)
-  dgel <- DGEList(exprs(e))
+runEdgeR <- function(e, as_gene = TRUE, compute_filter = FALSE, is_counts = TRUE, design = NULL) {
+  if (is_counts) {
+    design <- model.matrix(~ pData(e)$condition)
+    dgel <- DGEList(exprs(e))
+  } else {
+    dgel <- e
+  }
   if (compute_filter) {
     # Section 2.6 in edgeR vignette
     # https://www.bioconductor.org/packages/3.3/bioc/vignettes/edgeR/inst/doc/edgeRUsersGuide.pdf

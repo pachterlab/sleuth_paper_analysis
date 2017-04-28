@@ -79,12 +79,21 @@ each_filter <- lapply(each_filter_benchmark[[1]]$labels,
   })
 names(each_filter) <- each_filter_benchmark[[1]]$labels
 
+eps <- 0.005
+clean_oracle <- function(oracle) {
+  dplyr::mutate(oracle,
+      is_de = ifelse(is_de & log_fc < eps & -eps < log_fc, FALSE, is_de))
+}
+
 each_filter_lfc <- c(each_filter, lfc_filter)
 each_filter_benchmark_lfc <- lapply(1:sim$n,
   function(i) {
     current <- lapply(each_filter_lfc, '[[', i)
     current_names <- names(each_filter_lfc)
     sim_info <- get_de_info(sim_name, i, transcript_gene_mapping)
+    # if (sim_name == 'gfr_3_3_20_42_2') {
+    #   sim_info$de_info <- clean_oracle(sim_info$de_info)
+    # }
     new_de_benchmark(current, current_names, sim_info$de_info,
       join_mode = 'union')
   })

@@ -39,6 +39,7 @@ self_benchmark <- readRDS('../results/isoform_self_benchmark.rds')
 ## creating the plots
 
 ```{r}
+# debugonce(mamabear:::get_sensitivity_specificity)
 self_fdr <- lapply(self_benchmark, average_sensitivity_specificity)
 self_fdr <- dplyr::bind_rows(self_fdr)
 self_fdr <- dplyr::mutate(self_fdr, method = sub('qval_', '', method))
@@ -61,15 +62,25 @@ self_fdr <- dplyr::mutate(self_fdr,
   fdr_level_string = paste0('eFDR = ', sprintf('%.2f', fdr_level)))
 ```
 
+count the number of observations at each eFDR
+
+```{r}
+fdr_count <- dplyr::select(self_fdr, method, fdr_level_string, true_fdr, sample) %>%
+  dplyr::group_by(method, fdr_level_string) %>%
+  dplyr::summarize(n = sum(!is.na(true_fdr)))
+fdr_count <- dplyr::mutate(fdr_count, y = 1)
+```
+
 ```{r}
 p <- ggplot(self_fdr, aes(method, true_fdr, color = method)) +
-  geom_boxplot() +
+  geom_boxplot(outlier.shape = NA) + #avoid plotting outliers twice
+  geom_jitter(position = position_jitter(width = 0.7, height = 0), alpha = 0.5) +
+  geom_text(aes(method, y, label = n), data = fdr_count) +
   facet_wrap(~fdr_level_string, ncol = 1) +
   geom_hline(aes(yintercept = fdr_level), linetype = 2) +
   ylim(0, 1) +
   ylab('false discovery rate') +
   theme_hp() +
-  geom_jitter() +
   scale_color_manual(values = method_colors)
 p
 ```
@@ -119,15 +130,25 @@ self_fdr <- dplyr::mutate(self_fdr,
   fdr_level_string = paste0('eFDR = ', sprintf('%.2f', fdr_level)))
 ```
 
+count the number of observations at each eFDR
+
+```{r}
+fdr_count <- dplyr::select(self_fdr, method, fdr_level_string, true_fdr, sample) %>%
+  dplyr::group_by(method, fdr_level_string) %>%
+  dplyr::summarize(n = sum(!is.na(true_fdr)))
+fdr_count <- dplyr::mutate(fdr_count, y = 1)
+```
+
 ```{r}
 p <- ggplot(self_fdr, aes(method, true_fdr, color = method)) +
-  geom_boxplot() +
+  geom_boxplot(outlier.shape = NA) + #avoid plotting outliers twice
+  geom_jitter(position = position_jitter(width = 0.7, height = 0), alpha = 0.5) +
+  geom_text(aes(method, y, label = n), data = fdr_count) +
   facet_wrap(~fdr_level_string, ncol = 1) +
   geom_hline(aes(yintercept = fdr_level), linetype = 2) +
   ylim(0, 1) +
   ylab('false discovery rate') +
   theme_hp() +
-  geom_jitter() +
   scale_color_manual(values = method_colors)
 p
 ```

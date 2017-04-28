@@ -1,0 +1,264 @@
+---
+  title: "investigating components of variance"
+  output:
+    html_document:
+      fig_height: 20
+      fig_width: 20
+---
+
+
+```{r}
+colorblind_colors <- cbPalette <- c("#56B4E9", "#CC79A7", "#F0E442", "#D55E00", "#009E73", "#E69F00", "#0072B2")
+
+```
+
+First, let's load the sleuth results.
+
+```{r}
+source('load_info.R')
+source('../../geuvadis/R/benchmark_methods.R')
+source('../../simulation_core/R/simulate_de.R')
+
+library('sleuth')
+
+info <- dplyr::mutate(info,
+  condition = ifelse(condition == 'scramble', 'A', 'B'))
+
+sir <- run_sleuth(info, max_bootstrap = 100)
+sr <- sleuth_results(sir$so, test = 'reduced:full', test_type = 'lrt')
+```
+
+Let's look at the things that have greater inferential variance than biological variance:
+
+```{r}
+hiv <- dplyr::filter(sr, sigma_sq <= 0)
+hiv <- dplyr::mutate(hiv, cv_sq = tech_var / mean_obs ^ 2)
+hiv <- dplyr::arrange(hiv, desc(cv_sq))
+```
+
+Compute the coefficient of variation:
+
+```{r}
+ggplot(hiv, aes())
+```
+
+Let's break the things up with high inferential variance between significant and not significant:
+
+```{r}
+hiv_significant <- dplyr::filter(hiv, qval < 0.10)
+hiv_null <- dplyr::filter(hiv, qval >= 0.10)
+nrow(hiv_significant)
+nrow(hiv_null)
+```
+
+Load gene families file:
+
+```{r}
+paralog <- data.table::fread('../metadata/dgd_Hsa_all_v.tsv',# sep = '\t',
+  stringsAsFactors = FALSE, header = TRUE)
+paralog <- dplyr::rename(paralog, ens_gene = ENS_ID)
+```
+
+```{r}
+hiv_paralog <- dplyr::left_join(
+  dplyr::select(hiv, ens_gene),
+  paralog, by = 'ens_gene')
+```
+
+```{r}
+sr_genes <- dplyr::select(sr, ens_gene)
+sr_genes <- dplyr::distinct(sr_genes)
+sr_genes <- dplyr::left_join(sr_genes, paralog, by = 'ens_gene')
+```
+
+The total number of genes and how many have annotated paralogs:
+
+```{r}
+nrow(sr_genes)
+nrow(dplyr::filter(sr_genes, !is.na(chr)))
+```
+
+The total number of high inferential variance genes and how many have annotated paralogs:
+
+```{r}
+nrow(hiv_paralog)
+nrow(dplyr::filter(hiv_paralog, !is.na(chr)))
+```
+
+## looking at the number of transcripts per gene
+
+```{r}
+hiv_transcripts <- dplyr::select(hiv, ens_gene) %>%
+  dplyr::distinct()
+hiv_transcripts <- dplyr::left_join(hiv_transcripts, transcript_gene_mapping,
+  by = 'ens_gene')
+hiv_transcripts <- dplyr::group_by(hiv_transcripts, ens_gene)
+hiv_transcripts_per_gene <- dplyr::summarize(hiv_transcripts, n = n())
+```
+
+```{r}
+ggplot(hiv_transcripts_per_gene, aes())
+```
+
+```{r}
+sr_transcripts <- dplyr::select(sr, ens_gene) %>%
+  dplyr::distinct()
+sr_transcripts <- dplyr::left_join(sr_transcripts, transcript_gene_mapping,
+  by = 'ens_gene')
+sr_transcripts <- dplyr::group_by(sr_transcripts, ens_gene)
+sr_transcripts_per_gene <- dplyr::summarize(sr_transcripts, n = n())
+```
+
+```{r}
+t.test(sr_transcripts_per_gene$n, hiv_transcripts_per_gene$n, alternative = 'less')
+```
+
+```{r}
+ggplot()
+```
+
+
+## comparing results to limma and DESeq2
+
+```{r}
+info <- dplyr::mutate(info,
+  condition = ifelse(condition == 'scramble', 'A', 'B'))
+
+sgr <- run_sleuth(info, max_bootstrap = 30, gene_column = 'ens_gene',
+  gene_mode = 'aggregate')
+
+sr <- sleuth_results(sgr$so, test = 'reduced:full', test_type = 'lrt',
+  show_all = FALSE)
+```
+
+```{r}
+dl_significant <- readRDS('../results/dl_significant.rds')
+
+sr_dl_significant <- dplyr::inner_join(
+  dplyr::filter(sr, qval >= 0.10),
+  dl_significant,
+  by = 'target_id'
+  )
+```
+
+```{r}
+fp_in_order <- dplyr::arrange(sr_dl_significant, sigma_sq)$target_id
+sg <- sgr$so$bs_summary$obj
+class(sg) <- 'sleuth'
+
+plot_bootstrap(sg, fp_in_order[1], units = 'scaled_reads_per_base')
+
+fp_plots <- lapply(fp_in_order[1:9],
+  function(x) {
+    plot_bootstrap(sg, x, units = 'scaled_reads_per_base')
+  })
+```
+
+
+```{r}
+plot_grid(plotlist = fp_plots)
+```
+
+
+```{r}
+which_gene <- fp_in_order[5]
+gene_summary <- dplyr::filter(sr_dl_significant, target_id == which_gene)
+```
+
+```{r}
+plot_bootstrap_update <- function (obj, transcript,
+  units = "est_counts",
+  color_by = setdiff(colnames(obj$sample_to_covariates),
+    "sample"),
+  x_axis_angle = 50)
+{
+  df <- get_bootstraps(obj, transcript)
+  df[[units]] <- log(df[[units]] + 0.5)
+  if (nrow(df) == 0) {
+      stop("Couldn't find transcript ", transcript)
+  }
+  p <- ggplot(df, aes_string("sample", units))
+  # p <- p + geom_violin(aes_string(fill = color_by), alpha = 0.3)
+  # p <- p + geom_jitter(aes_string(color = color_by), alpha = 0.3)
+  p <- p + geom_jitter(alpha = 0.7, height = 0, width = 0.3, color = c("#56B4E9"))
+  # p <- p + geom_boxplot(aes_string(fill = color_by), alpha = 0.3, width = 0.1)
+  p <- p + theme(axis.text.x = element_text(angle = x_axis_angle,
+      hjust = 1))
+  p <- p + ggtitle(transcript)
+  p
+}
+```
+
+```{r}
+gene_counts <- melt(log(normalized_counts[which_gene, ] + 0.5))
+gene_counts <- dplyr::mutate(gene_counts, sample = rownames(gene_counts))
+gene_counts <- dplyr::rename(gene_counts, scaled_reads_per_base = value)
+
+point_estimates <- melt(sgr$so$bs_summary$obs_counts[which_gene, ])
+point_estimates <- dplyr::mutate(point_estimates, sample = rownames(point_estimates))
+point_estimates <- dplyr::rename(point_estimates, scaled_reads_per_base = value)
+point_estimates <- dplyr::left_join(point_estimates, sgr$so$sample_to_covariates)
+```
+
+```{r}
+set.seed(42)
+p <- plot_bootstrap_update(sg, which_gene,
+  units = 'scaled_reads_per_base')
+p <- p + geom_point(data = point_estimates, shape = 21,
+  size = 5, alpha = 1, fill = "#CC79A7")
+p <- p + ylab(paste0(which_gene, '\nscaled reads per base'))
+# p <- p + scale_color_manual(values = c("#56B4E9"))
+# p <- p + scale_color_manual(labels = c('scramble', 'HOXA1KD'),
+  # values = c("#E69F00", "#56B4E9"))
+p <- p + theme(legend.position = c(0.9, 0.9))
+p <- p + ggtitle('')
+p <- p + xlab('')
+p <- p + scale_x_discrete(labels = paste0(point_estimates$sample, '\n', rep(c('scramble', 'HOXA1KD'), each = 3)))
+p
+```
+
+```{r}
+save_plot('../results/variance_example.pdf', p, base_aspect_ratio = 1.4)
+```
+
+```{r}
+gene_summary <- dplyr::filter(sr, target_id == which_gene)
+gene_summary$raw_variance <- gene_summary$rss / 5
+tmp <- melt(dplyr::select(gene_summary, raw_variance, smooth_sigma_sq, tech_var))
+tmp <- dplyr::mutate(tmp)
+tmp <- dplyr::arrange(tmp, variable)
+tmp <- dplyr::mutate(tmp, variance_type = c('raw', 'sleuth', 'sleuth'))
+tmp <- dplyr::arrange(tmp, desc(variable))
+
+temporary2 <- data.frame(variable = c('tech_var', 'smooth_sigma_sq', 'raw_variance'),
+  `variance component` = c('inferential variance', 'smooth biological variance', 'raw variance'))
+temporary2 <- dplyr::rename(temporary2, `variance component` = variance.component)
+
+tmp <- dplyr::mutate(tmp, text_position = value / 2)
+tmp[tmp$variable == 'tech_var', ]$text_position <- tmp[tmp$variable == 'tech_var', ]$text_position + tmp[tmp$variable == 'smooth_sigma_sq', ]$text_position
+
+tmp <- dplyr::inner_join(tmp, temporary2)
+tmp <- dplyr::mutate(tmp, variable = factor(variable, levels = variable, ordered = TRUE))
+p <- ggplot(tmp, aes(variance_type, value)) +
+  geom_bar(aes(fill = `variance component`), stat = 'identity',
+    color = 'black')
+# p <- p + geom_text(aes(y = text_position, label = `variance component`),
+#   size = 3)
+p <- p + xlab('estimation method')
+p <- p + ylab('variance')
+p <- p + theme(legend.position = "none")
+p <- p + scale_fill_manual(labels = tmp$variable, values = colorblind_colors)
+p <- p + ylim(0, 2)
+# p <- p + scale_fill_brewer(palette = "Set2", type = 'qual')
+p
+```
+
+```{r}
+save_plot('../results/variance_components.pdf', p, base_aspect_ratio = 1.4)
+```
+
+
+
+```{r}
+sgr$so$bs_summary$
+```
