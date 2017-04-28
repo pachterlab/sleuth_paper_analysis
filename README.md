@@ -1,6 +1,8 @@
 # sleuth paper analysis
 
-This repo contains all of the code to reproduce the results in the [sleuth preprint](http://biorxiv.org/content/early/2016/06/10/058164).
+This repo contains all of the code to reproduce the results in the sleuth paper.
+
+The repository at https://github.com/pachterlab/sleuth_paper_analysis should always have an updated version that is hopefully bug free.
 
 
 # Preliminaries
@@ -56,8 +58,8 @@ Then, you should be able to install packages using the `biocLite()` function.
 
 ### from GitHub
 
-- [`sleuth v0.28.1`](https://github.com/pachterlab/sleuth/tree/bioRxiv) fork with some modifications: `devtools::install_github('pachterlab/sleuth', ref = 'bioRxiv')`
-- `mamabear v0.2`: `devtools::install_github('pimentel/mamabear', ref = 'v0.2')`
+- [`sleuth v0.28.1`](https://github.com/pachterlab/sleuth/tree/bioRxiv) fork with some modifications: `devtools::install_github('pachterlab/sleuth', ref = 'nm')`
+- `mamabear v0.3`: `devtools::install_github('pimentel/mamabear', ref = 'v0.3')`
 
 # Bug reports
 
