@@ -15,7 +15,7 @@ The repository at https://github.com/pachterlab/sleuth_paper_analysis should alw
 
 The code is organized into a few different directories, each with a theme:
 
-- `annotation`: pulls down the different annotations used and creates indeces
+- `annotation`: pulls down the different annotations used and creates indices
 - `bottomly`: analysis related to the Bottomly et al. data, particular the 'self-consistency FDR' experiments
 - `cuffdiff2_analysis`: analysis of the Trapnell et al. dataset to extract effect sizes from that dataset
 - `geuvadis`: the bulk of the simulations, based on results from the GEUVADIS data
