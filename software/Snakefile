@@ -141,9 +141,9 @@ rule get_seqtk:
         branch = '4feb6e81444ab6bc44139dd3a125068f81ae4ad8'
     shell:
         'git clone {params.url} {params.tmp};'
+        ' cd {params.tmp};'
         ' git reset --hard {params.branch};'
         # 'git clone --branch {params.branch} --depth 1 {params.url} {params.tmp};'
-        ' cd {params.tmp};'
         ' make;'
         ' cd ..;'
         # 'find {params.tmp} -maxdepth 1 -perm +o+x -type f -exec cp {{}} bin \;'
@@ -160,8 +160,8 @@ rule get_BitSeq:
         branch = '72fe9d9408467ac55fcbc717472e45ec71626b45'
     shell:
         'git clone {params.url} {params.tmp};'
-        ' git reset --hard {params.branch};'
         ' cd {params.tmp};'
+        ' git reset --hard {params.branch};'
         ' make;'
         ' cd ..;'
         # 'find {params.tmp} -maxdepth 1 -perm +o+x -type f -exec cp {{}} bin \;'

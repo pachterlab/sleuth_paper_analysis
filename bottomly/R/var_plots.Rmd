@@ -372,6 +372,7 @@ p
 ```
 
 ```{r}
+dir.create(base_dir, showWarnings = FALSE, recursive=T)
 filename <- file.path(base_dir, paste0('inferential_variance',
   default_extension))
 save_plot(filename, p, base_aspect_ratio = 1.6, base_height = 15)

@@ -29,15 +29,13 @@ rule all:
 
 rule metadata:
     output:
-        META,
-        "metadata/hiseq_accession.txt"
+        META
     shell:
         source_r('R', 'get_sample_info.R')
 
 rule fastq_dump_paired:
     input:
-        META,
-        "metadata/hiseq_accession.txt"
+        META
     output:
         'data/paired/{id}',
         'data/paired/{id}/{id}_1.fastq.gz',

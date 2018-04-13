@@ -190,6 +190,8 @@ rule run_benchmarks_isoform:
     input:
         expand('results/single/{id}/kallisto/abundance.h5', id = SRA_SINGLE),
         expand('results/validation/{num}/cuffdiff/isoform_exp.diff',
+            num = range(1, 20 + 1)),
+        expand('results/training/{num}/cuffdiff/gene_exp.diff',
             num = range(1, 20 + 1))
     output:
         'results/isoform_self_benchmark.rds',
@@ -234,6 +236,7 @@ def get_cuffdiff_training(wildcards):
     b = TRAINING_B[num].split(' ')
     ids = a + b
     return expand('results/single/{id}/cuffquant/abundances.cxb', id = ids)
+
 rule cuffdiff_training:
     input:
         get_cuffdiff_training
@@ -269,6 +272,7 @@ def get_cuffdiff_validation(wildcards):
     b = VALIDATION_B[num].split(' ')
     ids = a + b
     return expand('results/single/{id}/cuffquant/abundances.cxb', id = ids)
+
 rule cuffdiff_validation:
     input:
         get_cuffdiff_validation

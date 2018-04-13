@@ -36,7 +36,7 @@ rule get_genome:
     output:
         GENOME_FA
     shell:
-        'curl -o {output}'
+        'curl -o {output}.gz'
         ' --silent'
         ' ftp://ftp.ensembl.org/pub/release-80/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz'
         ' && '

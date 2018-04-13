@@ -20,8 +20,9 @@ source('../../geuvadis/R/benchmark_methods.R')
 source('../../simulation_core/R/simulate_de.R')
 
 library('sleuth')
+info_save = info
 
-info <- dplyr::mutate(info,
+info <- dplyr::mutate(info_save,
   condition = ifelse(condition == 'scramble', 'A', 'B'))
 
 sir <- run_sleuth(info, max_bootstrap = 100)
@@ -121,7 +122,7 @@ ggplot()
 ## comparing results to limma and DESeq2
 
 ```{r}
-info <- dplyr::mutate(info,
+info <- dplyr::mutate(info_save,
   condition = ifelse(condition == 'scramble', 'A', 'B'))
 
 sgr <- run_sleuth(info, max_bootstrap = 30, gene_column = 'ens_gene',
@@ -156,6 +157,7 @@ fp_plots <- lapply(fp_in_order[1:9],
 
 
 ```{r}
+library(cowplot)
 plot_grid(plotlist = fp_plots)
 ```
 

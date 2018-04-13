@@ -8,6 +8,7 @@ The repository at https://github.com/pachterlab/sleuth_paper_analysis should alw
 # Preliminaries
 
 - Install [snakemake](https://bitbucket.org/johanneskoester/snakemake)
+- Install [sratoolkit](https://trace.ncbi.nlm.nih.gov/Traces/sra/sra.cgi?cmd=show&f=software&m=software&s=software)
 - Download and install `R` along with dependencies listed below (R dependencies section)
 - Updated the `BASE` variable in `config.py` to represent the base path on your system
 
@@ -36,6 +37,8 @@ Install using `install.packages()`
 - `jsonlite`
 - `reshape2`
 - `scales`
+- `VennDiagram`
+- `knitr`
 
 ### from Bioconductor
 
