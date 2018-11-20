@@ -55,6 +55,7 @@ Then, you should be able to install packages using the `biocLite()` function.
 - `EBSeq`
 - `edgeR`
 - `limma`
+- `SRAdb`
 
 ### from GitHub
 
